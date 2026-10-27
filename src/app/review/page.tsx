@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import { Clapperboard } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { LoadingCard } from "@/components/loading-card";
 import { PageHeader } from "@/components/page-header";
 import { ReviewBoard } from "@/components/review/review-board";
@@ -20,5 +22,13 @@ export default function ReviewPage() {
 
 async function CandidateClips() {
   const clips = await getCandidateClips();
+  if (clips.length === 0) {
+    return (
+      <EmptyState icon={Clapperboard} title="No candidate clips yet">
+        The weekly candidates job submits new uploads to OpusClip and scores the clips. Scored clips show up here for
+        review.
+      </EmptyState>
+    );
+  }
   return <ReviewBoard clips={clips} />;
 }

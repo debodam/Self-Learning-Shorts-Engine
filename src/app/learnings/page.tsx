@@ -1,6 +1,7 @@
 import { Suspense } from "react";
-import { ArrowRightLeft, CheckCircle2, MessageSquareText } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, Lightbulb, MessageSquareText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { LoadingCard } from "@/components/loading-card";
 import { PageHeader } from "@/components/page-header";
 import { getWeeklyLearnings } from "@/lib/db";
@@ -39,9 +40,10 @@ async function LearningsList() {
   const learnings = await getWeeklyLearnings();
   if (learnings.length === 0) {
     return (
-      <p className="rounded-card border border-line bg-surface p-6 text-muted">
-        No weekly reports yet. The first one appears after a full week of posts.
-      </p>
+      <EmptyState icon={Lightbulb} title="No weekly reports yet">
+        The weekly learnings job writes one after a full week of posted clips, comparing predicted views with actual
+        results.
+      </EmptyState>
     );
   }
   return (
