@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useState, useTransition } from "react";
 import { CalendarClock, Search } from "lucide-react";
-import { togglePick } from "@/app/review/actions";
+import { addMissingPickHeadlines, togglePick } from "@/app/review/actions";
 import { ClipCard } from "@/components/review/clip-card";
 import type { OpusProjectOption } from "@/components/review/opus-sync";
 import { ScheduleDialog } from "@/components/review/schedule-dialog";
@@ -36,7 +36,8 @@ export function ReviewBoard({
   const [batch, setBatch] = useState(currentWeekId ? `week:${currentWeekId}` : "all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [scheduling, setScheduling] = useState(false);
-  const [pickError, setPickError] = useState<string | null>(null);
+  const [pickNote, setPickNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [fixing, startFixing] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   // Keeps typing responsive while the grid re-filters.
@@ -46,18 +47,30 @@ export function ReviewBoard({
   const pickCount = picks.length;
   const overTarget = pickCount > WEEKLY_APPROVAL_TARGET;
   const unscheduledCount = picks.filter((c) => !c.scheduledFor).length;
-  const canSchedule = pickCount === WEEKLY_APPROVAL_TARGET && unscheduledCount > 0;
+  // Every unscheduled pick needs a headline in the video before it can be scheduled.
+  // Picks Opus couldn't be checked for (render unknown) are left to the server's check.
+  const missingHeadlines = picks.filter((c) => !c.scheduledFor && c.render && !c.headline);
+  const canSchedule = pickCount === WEEKLY_APPROVAL_TARGET && unscheduledCount > 0 && missingHeadlines.length === 0;
+
+  function addMissing() {
+    if (!currentWeekId) return;
+    setPickNote(null);
+    startFixing(async () => {
+      const result = await addMissingPickHeadlines(currentWeekId);
+      setPickNote({ ok: result.ok, text: result.message });
+    });
+  }
   // Scheduled clips are locked in; cancel the post on the Schedule page to change them.
   const pickable = (clip: CandidateClip) =>
     Boolean(currentWeekId && clip.weekId === currentWeekId && clip.scores && !clip.cut && !clip.scheduledFor);
 
   function toggle(clip: CandidateClip) {
     if (!currentWeekId) return;
-    setPickError(null);
+    setPickNote(null);
     setPendingId(clip.id);
     startTransition(async () => {
       const result = await togglePick(currentWeekId, clip.id, !clip.picked);
-      if (!result.ok) setPickError(result.message);
+      if (result.message) setPickNote({ ok: result.ok, text: result.message });
       setPendingId(null);
     });
   }
@@ -106,7 +119,7 @@ export function ReviewBoard({
               <span className={`font-semibold ${overTarget ? "text-red-600" : "text-primary"}`}>{pickCount}</span> of{" "}
               {WEEKLY_APPROVAL_TARGET} selected. {hint}
             </p>
-            {pickError && <p className="mt-1 text-sm text-red-600">{pickError}</p>}
+            {pickNote && <p className={`mt-1 text-sm ${pickNote.ok ? "text-muted" : "text-red-600"}`}>{pickNote.text}</p>}
           </div>
           <button
             type="button"
@@ -118,6 +131,28 @@ export function ReviewBoard({
             Schedule
           </button>
         </div>
+        {missingHeadlines.length > 0 && (
+          <div className="mb-4 flex flex-col gap-3 rounded-card border border-amber-200 bg-amber-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-amber-900">
+              <p className="font-medium">
+                Scheduling is blocked: {missingHeadlines.length} {missingHeadlines.length === 1 ? "pick has" : "picks have"} no headline.
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {missingHeadlines.map((c) => (
+                  <li key={c.id}>{c.suggestedTitle ?? c.title}</li>
+                ))}
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={addMissing}
+              disabled={fixing}
+              className="shrink-0 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+            >
+              {fixing ? "Adding headlines" : "Add missing headlines"}
+            </button>
+          </div>
+        )}
         {picks.length > 0 ? (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">{picks.map(card)}</div>
         ) : (

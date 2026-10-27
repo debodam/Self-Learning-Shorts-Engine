@@ -98,6 +98,11 @@ export function ClipCard({
                 Scheduled {scheduledDate.format(new Date(clip.scheduledFor))}
               </span>
             )}
+            {clip.headline && (
+              <span title={`Headline: ${clip.headline}`} className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                Headline ✓
+              </span>
+            )}
             {clip.cut && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Cut</span>}
           </span>
         )}
@@ -270,7 +275,7 @@ function HeadlineEditor({ clip }: { clip: CandidateClip }) {
       </span>
     );
   } else if (!saved) {
-    status = "No headline yet. Save one now, or the suggested title is added when you schedule.";
+    status = "No headline yet, so this clip can't be scheduled. Add one here or use Add missing headlines.";
   }
 
   return (

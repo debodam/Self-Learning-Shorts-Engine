@@ -102,8 +102,8 @@ export function ScheduleDialog({
           <h2 className="text-lg font-semibold text-heading">Schedule this week&apos;s 7 clips</h2>
           <p className="text-sm text-muted">
             One per day at 12pm Eastern on the Exponent YouTube channel, through OpusClip, skipping days that already
-            have a post. Edit titles and descriptions before confirming. Any clip without a headline gets its suggested
-            title, and scheduling waits for Opus to render it into the video (usually under a minute).
+            have a post. Edit titles and descriptions before confirming. Scheduling checks every clip has its headline
+            rendered into the video, and waits for Opus to finish any render first.
           </p>
           {unscheduled.length > 0 && (
             <label className="mt-3 flex flex-wrap items-center gap-2 text-sm">
@@ -149,7 +149,7 @@ export function ScheduleDialog({
               <p className="text-xs text-muted">
                 Headline on the video:{" "}
                 <span className="font-medium text-body">
-                  {clip.headline ?? `${clip.suggestedTitle ?? clip.title} (added when scheduled)`}
+                  {clip.headline ?? "Missing. Add it before scheduling."}
                 </span>
               </p>
               <label className="flex flex-col gap-1">

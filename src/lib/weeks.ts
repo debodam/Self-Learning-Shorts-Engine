@@ -166,7 +166,46 @@ export async function autoPick(db: Db, weekId: string) {
   if (top.length === 0) return 0;
   const { error } = await db.from("clips").update({ picked: true }).in("id", top);
   if (error) throw new Error(`Failed to save picks: ${error.message}`);
+  // Every pick needs a headline before it can be scheduled, so add them now. A failure
+  // here leaves the picks in place; the Schedule button shows what's still missing.
+  await addMissingHeadlines(db, weekId).catch((e) => console.error("Adding headlines to new picks failed:", e));
   return top.length;
+}
+
+type HeadlineClip = { id: string; title: string; suggested_title: string | null; opus_clip_id: string | null };
+
+/** Adds the suggested factual title as a headline when the clip has none. Returns whether it added one. */
+async function ensureHeadline(clip: HeadlineClip) {
+  if (!clip.opus_clip_id) throw new Error(`"${clip.title}" didn't come from Opus, so it can't get a headline.`);
+  if ((await getClipRender(clip.opus_clip_id)).headline) return false;
+  await setClipHeadline(clip.opus_clip_id, clip.suggested_title ?? clip.title);
+  return true;
+}
+
+/**
+ * Gives every unscheduled pick in the week a headline, using its suggested factual title.
+ * Opus re-renders each one (no credits). Returns the titles that got one and any failures.
+ */
+export async function addMissingHeadlines(db: Db, weekId: string) {
+  const { data: picks, error } = await db
+    .from("clips")
+    .select("id, title, suggested_title, opus_clip_id, source_videos!inner (week_id)")
+    .eq("source_videos.week_id", weekId)
+    .eq("picked", true)
+    .in("status", ["candidate", "approved"]);
+  if (error) throw new Error(`Failed to load picks: ${error.message}`);
+  const added: string[] = [];
+  const failed: string[] = [];
+  await Promise.all(
+    picks.map(async (clip) => {
+      try {
+        if (await ensureHeadline(clip)) added.push(clip.suggested_title ?? clip.title);
+      } catch (e) {
+        failed.push(`"${clip.title}": ${e instanceof Error ? e.message : e}`);
+      }
+    }),
+  );
+  return { added, failed, total: picks.length };
 }
 
 /** Selects or unselects one of the week's kept clips. At most 7 picks at a time. */
@@ -180,6 +219,12 @@ export async function setPick(db: Db, weekId: string, clipId: string, picked: bo
   // Unpicking a clip saved as Ready to schedule puts it back with the other candidates.
   const { error } = await db.from("clips").update(picked ? { picked } : { picked, status: "candidate" }).eq("id", clipId);
   if (error) throw new Error(`Failed to save the pick: ${error.message}`);
+  if (!picked) return { headlineAdded: false };
+
+  // A clip swapped into the picks gets its headline right away.
+  const { data: full, error: loadError } = await db.from("clips").select("id, title, suggested_title, opus_clip_id").eq("id", clipId).single();
+  if (loadError) throw new Error(`Picked, but couldn't load the clip to add its headline: ${loadError.message}`);
+  return { headlineAdded: await ensureHeadline(full) };
 }
 
 // Scheduling --------------------------------------------------------------------
@@ -221,24 +266,30 @@ export async function bookedDates(db: Db) {
 export type ScheduleItem = { clipId: string; title: string; description: string };
 export type ScheduledPost = { clipId: string; title: string; publishAt: string; scheduleId: string };
 
-export type PostingCheck = { clipId: string; headline: string; addedHeadline: boolean; exportUrl: string | null };
+export type PostingCheck = { clipId: string; headline: string; exportUrl: string | null };
 
 /**
- * Gets clips ready to post: adds the suggested factual title as a headline to any clip
- * without one, waits for Opus to re-render, and checks the HD file (what Opus posts)
- * includes the headline. Re-renders use no credits. Throws if any clip isn't ready.
+ * Gets clips ready to post: refuses if any has no headline (naming them all), then waits
+ * for Opus to finish any render and checks the HD file (what Opus posts) includes the
+ * clip's latest edit. Throws if any clip isn't ready, so nothing is scheduled.
  */
 export async function prepareForPosting(clips: { id: string; opus_clip_id: string | null; suggested_title: string | null; title: string }[]) {
-  return Promise.all(
-    clips.map(async (clip): Promise<PostingCheck> => {
+  const renders = await Promise.all(
+    clips.map(async (clip) => {
       if (!clip.opus_clip_id) throw new Error(`"${clip.title}" didn't come from Opus, so it can't be posted through it.`);
-      const before = await getClipRender(clip.opus_clip_id);
-      const addedHeadline = !before.headline;
-      if (addedHeadline) await setClipHeadline(clip.opus_clip_id, clip.suggested_title ?? clip.title);
-      const after = before.rendering || addedHeadline || !before.exportCurrent ? await waitForRender(clip.opus_clip_id) : before;
+      return { clip, render: await getClipRender(clip.opus_clip_id) };
+    }),
+  );
+  const missing = renders.filter((r) => !r.render.headline).map((r) => `"${r.clip.suggested_title ?? r.clip.title}"`);
+  if (missing.length) {
+    throw new Error(`Nothing was scheduled. ${missing.length} ${missing.length === 1 ? "clip has" : "clips have"} no headline: ${missing.join(", ")}. Use Add missing headlines first.`);
+  }
+  return Promise.all(
+    renders.map(async ({ clip, render: before }): Promise<PostingCheck> => {
+      const after = before.rendering || !before.exportCurrent ? await waitForRender(clip.opus_clip_id!) : before;
       if (!after.headline) throw new Error(`"${clip.title}" still has no headline after rendering. Nothing was scheduled.`);
       if (!after.exportCurrent) throw new Error(`"${clip.title}" hasn't finished rendering with its headline. Nothing was scheduled.`);
-      return { clipId: clip.id, headline: after.headline, addedHeadline, exportUrl: after.exportUrl };
+      return { clipId: clip.id, headline: after.headline, exportUrl: after.exportUrl };
     }),
   );
 }

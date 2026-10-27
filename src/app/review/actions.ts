@@ -7,7 +7,7 @@ import { isIntegrationConnected } from "@/lib/integrations/config";
 import { checkViewerText } from "@/lib/agent/rules";
 import { setClipHeadline } from "@/lib/integrations/opus";
 import { syncOpusProject } from "@/lib/opus-sync";
-import { cancelPost, checkWeek, opusWritable, savePicksForLater, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
+import { addMissingHeadlines, cancelPost, checkWeek, opusWritable, savePicksForLater, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
 
 export type SyncFromOpusResult = { ok: boolean; message: string };
 export type ScoreClipsResult = SyncFromOpusResult;
@@ -122,10 +122,11 @@ export async function togglePick(weekId: string, clipId: string, picked: boolean
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
   try {
-    await setPick(db, weekId, clipId, picked === true);
+    const { headlineAdded } = await setPick(db, weekId, clipId, picked === true);
     refresh();
-    return { ok: true, message: "" };
+    return { ok: true, message: headlineAdded ? "Picked. Its suggested title is being added as the headline." : "" };
   } catch (error) {
+    refresh();
     return { ok: false, message: message(error, "Couldn't change the pick.") };
   }
 }
@@ -219,5 +220,23 @@ export async function setHeadline(clipId: string, text: string): Promise<SyncFro
   } catch (error) {
     console.error("Setting a headline failed:", error);
     return { ok: false, message: message(error, "Couldn't save the headline.") };
+  }
+}
+
+/** Adds the suggested factual title as a headline to every pick that has none. No Opus credits. */
+export async function addMissingPickHeadlines(weekId: string): Promise<SyncFromOpusResult> {
+  if (typeof weekId !== "string") return { ok: false, message: "No week." };
+  if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
+  const db = getDb();
+  if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
+  try {
+    const { added, failed } = await addMissingHeadlines(db, weekId);
+    refresh();
+    if (failed.length) return { ok: false, message: `Added ${added.length}. Failed: ${failed.join("; ")}` };
+    if (!added.length) return { ok: true, message: "Every pick already has a headline." };
+    return { ok: true, message: `Added ${added.length} ${added.length === 1 ? "headline" : "headlines"}. Opus is rendering them into the videos.` };
+  } catch (error) {
+    console.error("Adding missing headlines failed:", error);
+    return { ok: false, message: message(error, "Couldn't add the headlines.") };
   }
 }
