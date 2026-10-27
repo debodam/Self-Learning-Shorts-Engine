@@ -1,5 +1,5 @@
 import "server-only";
-import { CAPTION_RULES, checkViewerText, formatCaptions } from "@/lib/agent/rules";
+import { CAPTION_RULES, checkViewerText, formatCaption } from "@/lib/agent/rules";
 import { rubricCategories } from "@/lib/clips";
 import { runScoring, type ScoringRun } from "@/lib/clip-scoring";
 import type { Db } from "@/lib/db/client";
@@ -18,7 +18,7 @@ import {
   waitForRender,
   type OpusSocialAccount,
 } from "@/lib/integrations/opus";
-import { addUsage, CAPTIONS_MODEL, emptyUsage, estimateCostUsd, writeCaptions } from "@/lib/integrations/claude";
+import { addUsage, CAPTIONS_MODEL, emptyUsage, estimateCostUsd, writeCaption } from "@/lib/integrations/claude";
 import { getVideoInfo, normalizeYouTubeUrl } from "@/lib/integrations/youtube";
 import { saveOpusClips } from "@/lib/opus-sync";
 import { easternDate } from "@/lib/schedule-slots";
@@ -329,10 +329,9 @@ export async function prepareForPosting(clips: { id: string; opus_clip_id: strin
 // Captions ------------------------------------------------------------------------
 
 /**
- * Writes YouTube, TikTok, and Instagram captions (CAPTION_RULES) for the week's
- * unscheduled picks that don't have them yet. A YouTube title the user already has is
- * kept; the description gets the caption rules' version with hashtags. Logged to
- * agent_runs with its token cost.
+ * Writes the one caption (CAPTION_RULES) for each of the week's unscheduled picks that
+ * doesn't have one: its factual title, 1 to 2 lines of context, and 3 to 5 hashtags. The
+ * same caption is posted to every platform. Logged to agent_runs with its token cost.
  */
 export async function writePickCaptions(db: Db, weekId: string) {
   const { data: picks, error } = await db
@@ -341,7 +340,7 @@ export async function writePickCaptions(db: Db, weekId: string) {
     .eq("source_videos.week_id", weekId)
     .eq("picked", true)
     .in("status", ["candidate", "approved"])
-    .is("captions_generated_at", null);
+    .is("caption", null);
   if (error) throw new Error(`Failed to load picks: ${error.message}`);
   if (picks.length === 0) return { written: 0, failed: [] as string[], costUsd: 0 };
 
@@ -352,7 +351,8 @@ export async function writePickCaptions(db: Db, weekId: string) {
   await Promise.all(
     picks.map(async (clip) => {
       try {
-        const { captions, usage: used } = await writeCaptions({
+        const { caption, usage: used } = await writeCaption({
+          // The factual title, as the user may have edited it, is the caption's first line.
           title: clip.youtube_title ?? clip.suggested_title ?? clip.title,
           transcript: clip.transcript ?? "",
           sourceVideoTitle: clip.source_videos.title,
@@ -360,16 +360,9 @@ export async function writePickCaptions(db: Db, weekId: string) {
           durationSeconds: clip.duration_seconds,
         });
         usage = addUsage(usage, used);
-        const text = formatCaptions(captions);
         const { error: saveError } = await db
           .from("clips")
-          .update({
-            youtube_title: clip.youtube_title ?? text.youtube.title,
-            youtube_description: text.youtube.description,
-            tiktok_caption: text.tiktok,
-            instagram_caption: text.instagram,
-            captions_generated_at: new Date().toISOString(),
-          })
+          .update({ caption: formatCaption(caption), captions_generated_at: new Date().toISOString() })
           .eq("id", clip.id);
         if (saveError) throw new Error(saveError.message);
         written++;
@@ -397,29 +390,29 @@ export async function writePickCaptions(db: Db, weekId: string) {
 
 // Scheduling and posting -------------------------------------------------------------
 
-/** One clip's posts, as set in the preview. publishAt is an ISO time, or null to post now. */
+/**
+ * One clip's posts, as set in the preview. publishAt is an ISO time, or null to post now.
+ * The same caption goes to every platform; its first line is the post title.
+ */
 export type PostItem = {
   clipId: string;
   platforms: PostPlatform[];
   publishAt: string | null;
-  youtubeTitle: string;
-  youtubeDescription: string;
-  tiktokCaption: string;
-  instagramCaption: string;
+  caption: string;
 };
 
 const CAPTION_MAX = 2200;
 /** Opus needs a publish time in the future; leave room for the request to arrive. */
 const MIN_LEAD_MS = 5 * 60 * 1000;
 
+/** The caption's first line, used as the post title (YouTube's video title). */
+export const captionTitle = (caption: string) => caption.trim().split("\n")[0].trim();
+
 function cleanItem(item: PostItem) {
   return {
     ...item,
     platforms: PLATFORMS.filter((p) => item.platforms.includes(p)),
-    youtubeTitle: item.youtubeTitle.trim(),
-    youtubeDescription: item.youtubeDescription.trim(),
-    tiktokCaption: item.tiktokCaption.trim(),
-    instagramCaption: item.instagramCaption.trim(),
+    caption: item.caption.replace(/\r\n/g, "\n").trim(),
   };
 }
 
@@ -432,25 +425,13 @@ function itemIssues(item: ReturnType<typeof cleanItem>, label: string, now = Dat
     if (!Number.isFinite(at)) issues.push(`${label}: pick a date and time`);
     else if (at < now + MIN_LEAD_MS) issues.push(`${label}: the time has to be at least 5 minutes from now`);
   }
-  if (item.platforms.includes("youtube")) {
-    if (!item.youtubeTitle) issues.push(`${label}: needs a YouTube title`);
-    if (item.youtubeTitle.length > CAPTION_RULES.youtube.titleMaxChars) issues.push(`${label}: YouTube title is ${item.youtubeTitle.length} characters; keep it under 60`);
-    if (!item.youtubeDescription) issues.push(`${label}: needs a YouTube description`);
-    issues.push(...checkViewerText(`${label} YouTube title`, item.youtubeTitle), ...checkViewerText(`${label} YouTube description`, item.youtubeDescription));
+  if (!item.caption) issues.push(`${label}: needs a caption`);
+  if (item.caption.length > CAPTION_MAX) issues.push(`${label}: the caption is over ${CAPTION_MAX} characters`);
+  const title = captionTitle(item.caption);
+  if (item.platforms.includes("youtube") && title.length > CAPTION_RULES.youtube.titleMaxChars) {
+    issues.push(`${label}: the caption's first line is the YouTube title and is ${title.length} characters; keep it under 60`);
   }
-  if (item.platforms.includes("tiktok")) {
-    if (!item.tiktokCaption) issues.push(`${label}: needs a TikTok caption`);
-    if (item.tiktokCaption.length > CAPTION_MAX) issues.push(`${label}: TikTok caption is over ${CAPTION_MAX} characters`);
-    issues.push(...checkViewerText(`${label} TikTok caption`, item.tiktokCaption));
-  }
-  if (item.platforms.includes("instagram")) {
-    if (!item.instagramCaption) issues.push(`${label}: needs an Instagram caption`);
-    if (item.instagramCaption.length > CAPTION_MAX) issues.push(`${label}: Instagram caption is over ${CAPTION_MAX} characters`);
-    if (item.instagramCaption && !(/follow/i.test(item.instagramCaption) && /aced/i.test(item.instagramCaption))) {
-      issues.push(`${label}: the Instagram caption needs the "follow Aced" line`);
-    }
-    issues.push(...checkViewerText(`${label} Instagram caption`, item.instagramCaption));
-  }
+  issues.push(...checkViewerText(`${label} caption`, item.caption));
   return issues;
 }
 
@@ -466,19 +447,15 @@ async function loadPicks(db: Db, weekId: string) {
   return picks;
 }
 
-/** Saves the preview's titles and captions. */
+/** Saves the preview's captions. The first line also becomes the clip's title for display. */
 async function saveText(db: Db, items: ReturnType<typeof cleanItem>[]) {
   for (const item of items) {
+    const title = captionTitle(item.caption);
     const { error } = await db
       .from("clips")
-      .update({
-        youtube_title: item.youtubeTitle,
-        youtube_description: item.youtubeDescription,
-        tiktok_caption: item.tiktokCaption,
-        instagram_caption: item.instagramCaption,
-      })
+      .update({ caption: item.caption, ...(title && { youtube_title: title }) })
       .eq("id", item.clipId);
-    if (error) throw new Error(`Failed to save the captions: ${error.message}`);
+    if (error) throw new Error(`Failed to save the caption: ${error.message}`);
   }
 }
 
@@ -523,7 +500,7 @@ export async function publishClips(db: Db, weekId: string, items: PostItem[]) {
   if (postingNow.length > 1 || (postingNow.length === 1 && cleaned.length > 1)) throw new Error("Post now works on one clip at a time.");
   if (scheduling && picks.length !== PICKS_PER_WEEK) throw new Error(`Pick exactly ${PICKS_PER_WEEK} clips to schedule; ${picks.length} are picked.`);
 
-  const issues = cleaned.flatMap((item) => itemIssues(item, `"${item.youtubeTitle || open.get(item.clipId)!.title}"`));
+  const issues = cleaned.flatMap((item) => itemIssues(item, `"${captionTitle(item.caption) || open.get(item.clipId)!.title}"`));
   if (issues.length) throw new Error(`${issues.join(". ")}.`);
 
   // Save the preview's text first, so edits are kept even if posting fails.
@@ -537,11 +514,10 @@ export async function publishClips(db: Db, weekId: string, items: PostItem[]) {
       const [projectId, clipId] = open.get(item.clipId)!.opus_clip_id!.split(".");
       for (const platform of item.platforms) {
         const account = accounts[platform];
-        const caption = platform === "tiktok" ? item.tiktokCaption : item.instagramCaption;
-        // YouTube has a title and a description. TikTok and Instagram have one caption, sent
-        // as the description, with its first line as the title Opus requires.
-        const title = platform === "youtube" ? item.youtubeTitle : caption.split("\n")[0].slice(0, 150);
-        const description = platform === "youtube" ? item.youtubeDescription : caption;
+        // The same caption everywhere, as the description. Opus also requires a title: the
+        // caption's first line (the factual title), which is YouTube's video title.
+        const title = captionTitle(item.caption);
+        const description = item.caption;
         const post = {
           projectId,
           clipId,
@@ -564,19 +540,19 @@ export async function publishClips(db: Db, weekId: string, items: PostItem[]) {
             platform_post_id: opusId,
             scheduled_for: item.publishAt ?? now,
             posted_at: item.publishAt ? null : now,
-            caption: platform === "youtube" ? `${item.youtubeTitle}\n\n${item.youtubeDescription}` : caption,
+            caption: item.caption,
             account_name: account.name,
             status: item.publishAt ? "scheduled" : "posted",
           },
           { onConflict: "clip_id,platform" },
         );
         if (postError) throw new Error(`Sent "${title}" to ${account.platformLabel} (${opusId}) but couldn't save it: ${postError.message}.`);
-        published.push({ clipId: item.clipId, title: item.youtubeTitle, platform, account: `${account.platformLabel} ${account.handle}`, publishAt: item.publishAt, opusId });
+        published.push({ clipId: item.clipId, title, platform, account: `${account.platformLabel} ${account.handle}`, publishAt: item.publishAt, opusId });
         // Opus allows one posting request per second.
         await pause(1100);
       }
       const { error: clipError } = await db.from("clips").update({ status: item.publishAt ? "scheduled" : "posted" }).eq("id", item.clipId);
-      if (clipError) throw new Error(`Posted "${item.youtubeTitle}" but couldn't update the clip: ${clipError.message}`);
+      if (clipError) throw new Error(`Posted "${captionTitle(item.caption)}" but couldn't update the clip: ${clipError.message}`);
     }
   } catch (error) {
     const done = published.map((p) => `${p.title} on ${p.account}`).join(", ");

@@ -165,7 +165,7 @@ const validItems = (items: unknown): items is PostItem[] =>
       Array.isArray(i.platforms) &&
       i.platforms.every((p: unknown) => typeof p === "string" && PLATFORM_SET.has(p)) &&
       (i.publishAt === null || typeof i.publishAt === "string") &&
-      ["youtubeTitle", "youtubeDescription", "tiktokCaption", "instagramCaption"].every((k) => typeof i[k] === "string"),
+      typeof i.caption === "string",
   );
 
 /**
@@ -210,7 +210,7 @@ export async function savePicks(weekId: string, items: PostItem[]): Promise<Sche
   }
 }
 
-/** Writes YouTube, TikTok, and Instagram captions for picks that don't have them. Uses Claude. */
+/** Writes the one caption (posted to all three platforms) for picks that don't have one. Uses Claude. */
 export async function writeCaptionsForPicks(weekId: string): Promise<ScheduleResult> {
   if (typeof weekId !== "string") return { ok: false, message: "No week." };
   const db = getDb();
@@ -219,8 +219,8 @@ export async function writeCaptionsForPicks(weekId: string): Promise<ScheduleRes
     const { written, failed, costUsd } = await writePickCaptions(db, weekId);
     refresh();
     const cost = costUsd ? ` About $${costUsd.toFixed(3)}.` : "";
-    if (failed.length) return { ok: false, message: `Wrote captions for ${written}. Failed: ${failed.join("; ")}.${cost}` };
-    return { ok: true, message: written ? `Wrote captions for ${written} ${written === 1 ? "clip" : "clips"}.${cost}` : "Every pick already has captions." };
+    if (failed.length) return { ok: false, message: `Wrote ${written} captions. Failed: ${failed.join("; ")}.${cost}` };
+    return { ok: true, message: written ? `Wrote ${written} ${written === 1 ? "caption" : "captions"}.${cost}` : "Every pick already has a caption." };
   } catch (error) {
     console.error("Writing captions failed:", error);
     return { ok: false, message: message(error, "Couldn't write captions.") };

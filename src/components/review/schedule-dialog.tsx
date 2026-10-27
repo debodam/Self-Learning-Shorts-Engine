@@ -26,11 +26,11 @@ type Row = {
   date: string;
   time: string;
   platforms: PlatformKey[];
-  youtubeTitle: string;
-  youtubeDescription: string;
-  tiktokCaption: string;
-  instagramCaption: string;
+  /** Posted to every platform; its first line is the title. */
+  caption: string;
 };
+
+const firstLine = (caption: string) => caption.trim().split("\n")[0].trim();
 
 const slotFormat = new Intl.DateTimeFormat("en-US", {
   weekday: "short",
@@ -51,15 +51,9 @@ function rowIssues(row: Row, postNow: boolean) {
     if (!at) issues.push("Pick a valid date and time.");
     else if (at.getTime() < Date.now() + 5 * 60 * 1000) issues.push("The time has to be at least 5 minutes from now.");
   }
-  if (row.platforms.includes("youtube")) {
-    if (!row.youtubeTitle.trim()) issues.push("Add a YouTube title.");
-    if (row.youtubeTitle.trim().length > TITLE_MAX) issues.push(`Keep the YouTube title to ${TITLE_MAX} characters.`);
-    if (!row.youtubeDescription.trim()) issues.push("Add a YouTube description.");
-  }
-  if (row.platforms.includes("tiktok") && !row.tiktokCaption.trim()) issues.push("Add a TikTok caption.");
-  if (row.platforms.includes("instagram")) {
-    if (!row.instagramCaption.trim()) issues.push("Add an Instagram caption.");
-    else if (!(/follow/i.test(row.instagramCaption) && /aced/i.test(row.instagramCaption))) issues.push('Keep the "follow Aced" line in the Instagram caption.');
+  if (!row.caption.trim()) issues.push("Add a caption.");
+  else if (row.platforms.includes("youtube") && firstLine(row.caption).length > TITLE_MAX) {
+    issues.push(`The first line is the YouTube title; keep it to ${TITLE_MAX} characters.`);
   }
   return issues;
 }
@@ -99,10 +93,7 @@ export function ScheduleDialog({
           date: dates[i],
           time: DEFAULT_POST_TIME,
           platforms: [...PLATFORMS],
-          youtubeTitle: c.youtubeTitle ?? c.suggestedTitle ?? c.title,
-          youtubeDescription: c.youtubeDescription ?? "",
-          tiktokCaption: c.tiktokCaption ?? "",
-          instagramCaption: c.instagramCaption ?? "",
+          caption: c.caption ?? "",
         },
       ]),
     );
@@ -115,20 +106,9 @@ export function ScheduleDialog({
     dialog.current?.showModal();
   }, []);
 
-  // Captions written after the preview opened (Write captions) show in any field left empty.
+  // A caption written after the preview opened (Write captions) shows if the box is empty.
   const rowsNow: Record<string, Row> = Object.fromEntries(
-    open.map((c) => {
-      const row = rows[c.id];
-      return [
-        c.id,
-        {
-          ...row,
-          youtubeDescription: row.youtubeDescription || c.youtubeDescription || "",
-          tiktokCaption: row.tiktokCaption || c.tiktokCaption || "",
-          instagramCaption: row.instagramCaption || c.instagramCaption || "",
-        },
-      ];
-    }),
+    open.map((c) => [c.id, { ...rows[c.id], caption: rows[c.id].caption || c.caption || "" }]),
   );
 
   const update = (id: string, patch: Partial<Row>) => setRows((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -143,8 +123,8 @@ export function ScheduleDialog({
 
   const accounts = postAccounts.accounts;
   const blocked = Boolean(postAccounts.error) || !accounts;
-  const needsCaptions = open.some((c) => !rowsNow[c.id]?.tiktokCaption.trim() || !rowsNow[c.id]?.instagramCaption.trim());
-  const scheduleIssues = open.flatMap((c) => rowIssues(rowsNow[c.id], false).map((i) => `${rowsNow[c.id].youtubeTitle || c.title}: ${i}`));
+  const needsCaptions = open.some((c) => !rowsNow[c.id]?.caption.trim());
+  const scheduleIssues = open.flatMap((c) => rowIssues(rowsNow[c.id], false).map((i) => `${firstLine(rowsNow[c.id].caption) || c.title}: ${i}`));
   const missingHeadline = open.filter((c) => c.render && !c.headline);
 
   const itemFor = (c: CandidateClip, postNow: boolean) => {
@@ -153,10 +133,7 @@ export function ScheduleDialog({
       clipId: c.id,
       platforms: row.platforms,
       publishAt: postNow ? null : (easternToUtc(row.date, row.time)?.toISOString() ?? ""),
-      youtubeTitle: row.youtubeTitle,
-      youtubeDescription: row.youtubeDescription,
-      tiktokCaption: row.tiktokCaption,
-      instagramCaption: row.instagramCaption,
+      caption: row.caption,
     };
   };
 
@@ -165,7 +142,7 @@ export function ScheduleDialog({
     const at = easternToUtc(row.date, row.time);
     const when = postNow ? "NOW" : at ? `${slotFormat.format(at)} (${localTimeLabel(at)})` : "?";
     const where = row.platforms.map((p) => `${PLATFORM_LABELS[p]} ${accounts?.[p] ?? ""}`).join(", ");
-    return `"${row.youtubeTitle || c.title}"\n  ${when}\n  ${where}`;
+    return `"${firstLine(row.caption) || c.title}"\n  ${when}\n  ${where}`;
   };
 
   function send(clips: CandidateClip[], postNow: boolean) {
@@ -203,8 +180,8 @@ export function ScheduleDialog({
           <h2 className="text-lg font-semibold text-heading">Schedule this week&apos;s 7 clips</h2>
           <p className="text-sm text-muted">
             Through OpusClip to YouTube {accounts?.youtube ?? ""}, TikTok {accounts?.tiktok ?? ""}, and Instagram{" "}
-            {accounts?.instagram ?? ""}. By default one per day at 12pm Eastern. Change any clip&apos;s time, platforms,
-            or captions below, or post it now.
+            {accounts?.instagram ?? ""}, with the same caption on all three. By default one per day at 12pm Eastern.
+            Change any clip&apos;s time, platforms, or caption below, or post it now.
           </p>
           {open.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
@@ -228,7 +205,7 @@ export function ScheduleDialog({
                   className="flex items-center gap-1.5 rounded-lg border border-primary px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary-tint disabled:opacity-60"
                 >
                   <PenLine className="size-3.5" />
-                  Write captions for all platforms
+                  Write captions
                 </button>
               )}
             </div>
@@ -254,7 +231,7 @@ export function ScheduleDialog({
                   <CalendarCheck className="size-3.5" />
                   {clip.posted ? "Posted" : `Scheduled from ${slotFormat.format(new Date(clip.scheduledFor!))}`}
                 </p>
-                <p className="text-sm font-medium text-heading">{clip.youtubeTitle ?? clip.title}</p>
+                <p className="text-sm font-medium text-heading">{(clip.caption && firstLine(clip.caption)) || clip.youtubeTitle || clip.title}</p>
               </li>
             );
           }
@@ -318,55 +295,20 @@ export function ScheduleDialog({
                 </span>
               </div>
 
-              {row.platforms.includes("youtube") && (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-muted">YouTube</span>
-                  <input
-                    aria-label={`YouTube title for ${clip.title}`}
-                    value={row.youtubeTitle}
-                    disabled={pending}
-                    onChange={(e) => update(clip.id, { youtubeTitle: e.target.value })}
-                    className={`${field} font-medium text-heading`}
-                  />
-                  <span className={`text-xs ${row.youtubeTitle.trim().length > TITLE_MAX ? "text-red-600" : "text-muted"}`}>
-                    {row.youtubeTitle.trim().length}/{TITLE_MAX} characters
-                  </span>
-                  <textarea
-                    aria-label={`YouTube description for ${clip.title}`}
-                    value={row.youtubeDescription}
-                    rows={3}
-                    disabled={pending}
-                    onChange={(e) => update(clip.id, { youtubeDescription: e.target.value })}
-                    className={`${field} resize-y`}
-                  />
-                </div>
-              )}
-              {row.platforms.includes("tiktok") && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-muted">TikTok caption</span>
-                  <textarea
-                    value={row.tiktokCaption}
-                    rows={3}
-                    disabled={pending}
-                    placeholder="Use Write captions above, or type one."
-                    onChange={(e) => update(clip.id, { tiktokCaption: e.target.value })}
-                    className={`${field} resize-y`}
-                  />
-                </label>
-              )}
-              {row.platforms.includes("instagram") && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-muted">Instagram caption</span>
-                  <textarea
-                    value={row.instagramCaption}
-                    rows={5}
-                    disabled={pending}
-                    placeholder="Use Write captions above, or type one. Keep the follow Aced line."
-                    onChange={(e) => update(clip.id, { instagramCaption: e.target.value })}
-                    className={`${field} resize-y`}
-                  />
-                </label>
-              )}
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted">Caption, posted to all platforms</span>
+                <textarea
+                  value={row.caption}
+                  rows={5}
+                  disabled={pending}
+                  placeholder="Use Write captions above, or type one: the factual title, 1 to 2 lines of context, then 3 to 5 hashtags."
+                  onChange={(e) => update(clip.id, { caption: e.target.value })}
+                  className={`${field} resize-y`}
+                />
+                <span className={`text-xs ${firstLine(row.caption).length > TITLE_MAX ? "text-red-600" : "text-muted"}`}>
+                  First line (the YouTube title): {firstLine(row.caption).length}/{TITLE_MAX} characters
+                </span>
+              </label>
               {rowIssues(row, false).length > 0 && <p className="text-xs text-red-600">{rowIssues(row, false).join(" ")}</p>}
             </li>
           );

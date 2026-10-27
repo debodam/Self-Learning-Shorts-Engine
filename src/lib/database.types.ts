@@ -94,6 +94,7 @@ export type Database = {
           captions_generated_at: string | null
           instagram_caption: string | null
           tiktok_caption: string | null
+          caption: string | null
         }
         Insert: {
           created_at?: string
@@ -131,6 +132,7 @@ export type Database = {
           captions_generated_at?: string | null
           instagram_caption?: string | null
           tiktok_caption?: string | null
+          caption?: string | null
         }
         Update: {
           created_at?: string
@@ -168,6 +170,7 @@ export type Database = {
           captions_generated_at?: string | null
           instagram_caption?: string | null
           tiktok_caption?: string | null
+          caption?: string | null
         }
         Relationships: [
           {

@@ -86,8 +86,8 @@ export type CandidateClip = {
   opusClipId?: string | null;
   youtubeTitle?: string | null;
   youtubeDescription?: string | null;
-  tiktokCaption?: string | null;
-  instagramCaption?: string | null;
+  /** The one caption posted to YouTube, TikTok, and Instagram. Its first line is the title. */
+  caption?: string | null;
   /** Posted right away (Post now) rather than scheduled. */
   posted?: boolean;
   transcript?: string | null;

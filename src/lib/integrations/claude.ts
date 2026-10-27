@@ -23,14 +23,14 @@ import {
   checkViewerText,
   HOOK_TYPES,
   shouldCut,
-  validateCaptions,
+  validateCaption,
+  type ClipCaption,
   type HookType,
-  type PlatformCaptions,
 } from "@/lib/agent/rules";
 import type { RubricCategory } from "@/lib/clips";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { requireEnv } from "@/lib/integrations/shared";
-import { mockCaptions, mockClipScore, mockWeeklyLearning } from "@/lib/mock/agent";
+import { mockCaption, mockClipScore, mockWeeklyLearning } from "@/lib/mock/agent";
 
 // Claude API calls for the clip agent. Docs: https://platform.claude.com/docs
 // Every function returns mock data when ANTHROPIC_API_KEY isn't set.
@@ -327,27 +327,22 @@ export async function calibrateBatch(
 
 // Captions ---------------------------------------------------------------------
 
-const captionsSchema = z.object({
-  youtube: z.object({ title: z.string(), description: z.string(), hashtags: z.array(z.string()) }),
-  tiktok: z.object({ hook: z.string(), hashtags: z.array(z.string()) }),
-  instagram: z.object({
-    hook: z.string(),
-    context: z.array(z.string()),
-    cta: z.string(),
-    hashtags: z.array(z.string()),
-  }),
+const captionSchema = z.object({
+  context: z.array(z.string()),
+  hashtags: z.array(z.string()),
 });
 
 const MAX_CAPTION_ATTEMPTS = 2;
 
-/**
- * Writes YouTube, TikTok, and Instagram copy for an approved clip. Checks it against the
- * caption rules and asks Claude to fix any problems once before giving up.
- */
 export const CAPTIONS_MODEL = MODEL;
 
-export async function writeCaptions(clip: ClipForAgent): Promise<{ captions: PlatformCaptions; usage: TokenUsage }> {
-  if (!connected()) return { captions: mockCaptions(clip), usage: emptyUsage() };
+/**
+ * Writes the one caption a clip is posted with on every platform: its factual title (as
+ * given), 1 to 2 lines of context, and 3 to 5 hashtags. Checks it against the caption rules
+ * and asks Claude to fix any problems once before giving up.
+ */
+export async function writeCaption(clip: ClipForAgent): Promise<{ caption: ClipCaption; usage: TokenUsage }> {
+  if (!connected()) return { caption: mockCaption(clip), usage: emptyUsage() };
 
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: buildCaptionsMessage(clip) }];
   let issues: string[] = [];
@@ -359,21 +354,22 @@ export async function writeCaptions(clip: ClipForAgent): Promise<{ captions: Pla
       betas: [FALLBACK_BETA],
       fallbacks: "default",
       thinking: { type: "adaptive" },
-      output_config: { effort: "medium", format: betaZodOutputFormat(captionsSchema) },
+      output_config: { effort: "medium", format: betaZodOutputFormat(captionSchema) },
       system: [{ type: "text", text: CAPTIONS_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages,
     });
     usage = addUsage(usage, toUsage(response.usage));
-    assertUsable(response, "write captions");
-    const captions = response.parsed_output;
-    if (!captions) throw new Error("Claude returned no parseable captions");
+    assertUsable(response, "write the caption");
+    const out = response.parsed_output;
+    if (!out) throw new Error("Claude returned no parseable caption");
 
-    issues = validateCaptions(captions);
-    if (issues.length === 0) return { captions, usage };
+    const caption = { title: clip.title.trim(), context: out.context.map((l) => l.trim()).filter(Boolean), hashtags: out.hashtags.map((h) => h.trim()) };
+    issues = validateCaption(caption);
+    if (issues.length === 0) return { caption, usage };
     // Append the whole response unchanged (thinking blocks included) before the follow-up.
     messages.push({ role: "assistant", content: response.content }, { role: "user", content: buildCaptionsRepairMessage(issues) });
   }
-  throw new Error(`Captions still break the rules after ${MAX_CAPTION_ATTEMPTS} attempts: ${issues.join("; ")}`);
+  throw new Error(`The caption still breaks the rules after ${MAX_CAPTION_ATTEMPTS} attempts: ${issues.join("; ")}`);
 }
 
 // Weekly learnings -------------------------------------------------------------

@@ -19,16 +19,17 @@ export const HOOK_TYPES = [
 export type HookType = (typeof HOOK_TYPES)[number];
 
 export const CAPTION_RULES = {
-  youtube: { titleMaxChars: 59, descriptionLines: [1, 2], hashtags: [3, 3] },
-  tiktok: { hashtags: [3, 5] },
-  instagram: { contextLines: [2, 3], hashtags: [5, 5] },
+  /** The scoring agent's YouTube copy, and the limit on the caption's first line (the title). */
+  youtube: { titleMaxChars: 59, descriptionLines: [1, 2] },
+  /** The one caption posted to YouTube, TikTok, and Instagram. */
+  caption: { contextLines: [1, 2], hashtags: [3, 5] },
 } as const;
 
-export type PlatformCaptions = {
-  youtube: { title: string; description: string; hashtags: string[] };
-  tiktok: { hook: string; hashtags: string[] };
-  instagram: { hook: string; context: string[]; cta: string; hashtags: string[] };
-};
+/**
+ * The caption posted as is to all three platforms: the clip's factual title, 1 to 2 lines
+ * of context, and 3 to 5 hashtags.
+ */
+export type ClipCaption = { title: string; context: string[]; hashtags: string[] };
 
 export function shouldCut(scores: Record<RubricCategory, number>) {
   return CUT_CATEGORIES.some((c) => scores[c] < MIN_KEEP_SCORE);
@@ -57,51 +58,23 @@ function checkHashtags(label: string, tags: string[], [min, max]: readonly [numb
   return issues;
 }
 
-/** Checks captions against CAPTION_RULES and the viewer text rules. Returns problems, empty when fine. */
-export function validateCaptions(c: PlatformCaptions): string[] {
-  const { youtube, tiktok, instagram } = CAPTION_RULES;
+/** Checks a caption against CAPTION_RULES and the viewer text rules. Returns problems, empty when fine. */
+export function validateCaption(c: ClipCaption): string[] {
+  const { youtube, caption } = CAPTION_RULES;
   const issues: string[] = [];
-
-  if (c.youtube.title.length > youtube.titleMaxChars) {
-    issues.push(`YouTube title is ${c.youtube.title.length} characters; it must be under 60`);
+  if (c.title.length > youtube.titleMaxChars) issues.push(`The title is ${c.title.length} characters; it must be under 60`);
+  if (c.context.length < caption.contextLines[0] || c.context.length > caption.contextLines[1]) {
+    issues.push(`Context must be 1 to 2 lines, has ${c.context.length}`);
   }
-  const descLines = c.youtube.description.split("\n").filter((l) => l.trim()).length;
-  if (descLines < youtube.descriptionLines[0] || descLines > youtube.descriptionLines[1]) {
-    issues.push(`YouTube description must be 1 to 2 lines, has ${descLines}`);
-  }
-  issues.push(...checkHashtags("YouTube", c.youtube.hashtags, youtube.hashtags));
-
-  if (c.tiktok.hook.includes("\n")) issues.push("TikTok hook must be one line");
-  issues.push(...checkHashtags("TikTok", c.tiktok.hashtags, tiktok.hashtags));
-
-  if (c.instagram.hook.includes("\n")) issues.push("Instagram hook must be one line");
-  if (c.instagram.context.length < instagram.contextLines[0] || c.instagram.context.length > instagram.contextLines[1]) {
-    issues.push(`Instagram context must be 2 to 3 lines, has ${c.instagram.context.length}`);
-  }
-  if (!/follow/i.test(c.instagram.cta) || !/aced/i.test(c.instagram.cta)) {
-    issues.push("Instagram CTA must ask viewers to follow Aced");
-  }
-  issues.push(...checkHashtags("Instagram", c.instagram.hashtags, instagram.hashtags));
-
-  const texts: [string, string][] = [
-    ["YouTube title", c.youtube.title],
-    ["YouTube description", c.youtube.description],
-    ["TikTok hook", c.tiktok.hook],
-    ["Instagram hook", c.instagram.hook],
-    ["Instagram context", c.instagram.context.join("\n")],
-    ["Instagram CTA", c.instagram.cta],
-  ];
-  for (const [label, text] of texts) issues.push(...checkViewerText(label, text));
+  if (c.context.some((line) => line.includes("\n"))) issues.push("Each context line must be a single line");
+  issues.push(...checkHashtags("Caption", c.hashtags, caption.hashtags));
+  issues.push(...checkViewerText("Caption", [c.title, ...c.context].join("\n")));
   return issues;
 }
 
-/** Renders captions as the text each platform receives. */
-export function formatCaptions(c: PlatformCaptions) {
-  return {
-    youtube: { title: c.youtube.title, description: `${c.youtube.description}\n\n${c.youtube.hashtags.join(" ")}` },
-    tiktok: `${c.tiktok.hook}\n\n${c.tiktok.hashtags.join(" ")}`,
-    instagram: [c.instagram.hook, "", ...c.instagram.context, "", c.instagram.cta, "", c.instagram.hashtags.join(" ")].join("\n"),
-  };
+/** The caption text exactly as posted: title, then context, then hashtags. */
+export function formatCaption(c: ClipCaption) {
+  return [c.title, "", ...c.context, "", c.hashtags.join(" ")].join("\n");
 }
 
 /**

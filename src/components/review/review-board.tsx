@@ -226,7 +226,7 @@ export function ReviewBoard({
       {scheduling && currentWeekId && (
         <ScheduleDialog
           // Reloads the preview's fields once captions are written, so they show the new text.
-          key={picks.map((c) => (c.tiktokCaption ? "1" : "0")).join("")}
+          key={picks.map((c) => (c.caption ? "1" : "0")).join("")}
           weekId={currentWeekId}
           picks={picks}
           bookedDates={bookedDates}

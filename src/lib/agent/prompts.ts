@@ -10,7 +10,8 @@ const BRAND_AND_STYLE = `Brand and style, for everything a viewer will see (titl
 - The brand is "Aced". The company used to be called Exponent, and older videos may say so. Never write "Exponent" in anything a viewer sees; say "Aced" or leave the brand out.
 - Never use em dashes. Use a period, comma, colon, or parentheses instead.
 - Be factual and specific. Describe what actually happens in the clip, and name the company and role when the source video does ("Google PM candidate", "Meta system design interview").
-- No clickbait. Don't promise what the clip doesn't deliver, don't use "you won't believe", "this changes everything", shock framing, ALL CAPS, or emoji.`;
+- No clickbait. Don't promise what the clip doesn't deliver, don't use "you won't believe", "this changes everything", shock framing, ALL CAPS, or emoji.
+- Refer to people by their role or name ("the Stripe GTM lead", "the candidate"), never with he, she, him, or her. A transcript doesn't tell you how someone identifies, and a wrong guess is a factual error.`;
 
 const CUT_LABELS = CUT_CATEGORIES.map((c) => c[0].toUpperCase() + c.slice(1)).join(" or ");
 
@@ -94,30 +95,13 @@ In your reasoning, explain the scores in one short sentence of at most 25 words 
 
 export const CAPTIONS_SYSTEM_PROMPT = `${ABOUT_ACED}
 
-Your job here is to write the post copy for one approved clip on each platform. You'll get the clip's title, transcript, and source video.
+Your job here is to write the caption for one approved clip. The same caption is posted as is to YouTube Shorts, TikTok, and Instagram Reels. You'll get the clip's factual title, transcript, and source video.
 
-${BRAND_AND_STYLE}
+The caption is the title (given to you; it's added as the first line, so don't repeat it), then:
+- context: ${CAPTION_RULES.caption.contextLines[0]} to ${CAPTION_RULES.caption.contextLines[1]} short lines that say what happens in the clip and what the viewer learns. Plain statements of fact, one line per array item, not questions aimed at the viewer and not teases.
+- hashtags: ${CAPTION_RULES.caption.hashtags[0]} to ${CAPTION_RULES.caption.hashtags[1]} relevant tags. Each is # followed by letters, numbers, or underscores, with no spaces. Mix one or two broad tags (#interviewprep, #techcareers) with specific ones for the role, company, or topic. Don't repeat a tag.
 
-The hook line is the first thing a viewer reads. It states the specific moment in the clip as a plain fact, for example "A Google PM candidate asks who the app is for before designing anything." It is not a question aimed at the viewer and not a tease.
-
-YouTube Shorts:
-- title: under 60 characters, following the title rules below.
-- description: 1 to 2 lines that say what happens in the clip and what the viewer learns.
-- hashtags: exactly ${CAPTION_RULES.youtube.hashtags[0]}.
-
-TikTok:
-- hook: one factual hook line.
-- hashtags: ${CAPTION_RULES.tiktok.hashtags[0]} to ${CAPTION_RULES.tiktok.hashtags[1]}.
-
-Instagram Reels:
-- hook: one factual hook line.
-- context: ${CAPTION_RULES.instagram.contextLines[0]} to ${CAPTION_RULES.instagram.contextLines[1]} short lines that add what the viewer should notice or take away. One line per array item.
-- cta: one line asking viewers to follow Aced, tied to the clip's topic, for example "Follow Aced for more real PM interview moments."
-- hashtags: exactly ${CAPTION_RULES.instagram.hashtags[0]}.
-
-${TITLE_RULES}
-
-Hashtags: each is # followed by letters, numbers, or underscores, with no spaces. Mix one or two broad tags (#interviewprep, #techcareers) with specific ones for the role, company, or topic. Don't repeat a tag within a platform.`;
+${BRAND_AND_STYLE}`;
 
 // Message builders -------------------------------------------------------------
 
@@ -168,11 +152,11 @@ export function buildScoringMessage(clip: ClipForAgent, similarClips: SimilarCli
 }
 
 export function buildCaptionsMessage(clip: ClipForAgent) {
-  return `Write the post copy for this approved clip.\n\n${clipDetails(clip)}`;
+  return `Write the caption for this approved clip. Its title, the caption's first line, is: ${clip.title}\n\n${clipDetails(clip)}`;
 }
 
 export function buildCaptionsRepairMessage(issues: string[]) {
-  return `That copy breaks these rules:\n${issues.map((i) => `- ${i}`).join("\n")}\n\nRewrite all three platforms so every rule is met. Keep what already works.`;
+  return `That caption breaks these rules:\n${issues.map((i) => `- ${i}`).join("\n")}\n\nRewrite it so every rule is met. Keep what already works.`;
 }
 
 // Weekly learnings -------------------------------------------------------------

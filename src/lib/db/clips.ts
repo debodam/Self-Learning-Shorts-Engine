@@ -34,7 +34,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, tiktok_caption, instagram_caption, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, status)",
+      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, caption, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, status)",
     )
     // Cut clips are saved as rejected, picks saved for later as approved. Scheduled and
     // posted clips stay visible as part of their week's picks.
@@ -87,8 +87,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
       weekId: row.source_videos.week_id,
       youtubeTitle: row.youtube_title,
       youtubeDescription: row.youtube_description,
-      tiktokCaption: row.tiktok_caption,
-      instagramCaption: row.instagram_caption,
+      caption: row.caption,
       opusClipId: row.opus_clip_id,
       // Composite Opus IDs are "{projectId}.{clipId}".
       batchId: row.opus_clip_id?.split(".")[0],

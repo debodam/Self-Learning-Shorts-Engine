@@ -40,6 +40,7 @@ Match Aced's product UI. Light theme, light gray page background, white sidebar,
 
 - Branding says "Aced", never "Exponent", anywhere a viewer sees it.
 - Titles are factual and specific. No clickbait.
+- Captions: one caption per clip, posted as is to YouTube, TikTok, and Instagram. It's the factual title (the first line, which is also the YouTube title, under 60 characters), then 1 to 2 lines of context, then 3 to 5 relevant hashtags.
 - Every person speaking must be fully visible. Split layout for 2+ people.
 - Mock interview clips open on the moment of tension, then cut back to the answer.
 - Rubric, 1 to 5 each: Hook, Tension, Standalone, Payoff, Loopability. Cut anything under 3 on Hook or Standalone.
@@ -53,13 +54,13 @@ The Review page follows this flow. Build and change features to fit it.
 2. Both get submitted to OpusClip with the Aced template.
 3. When Opus finishes, the clips sync in and get scored on our rubric.
 4. The top 7 across both videos are auto-highlighted as this week's picks.
-5. The user reviews them, swaps any out if they want, and schedules them through OpusClip to YouTube, TikTok, and Instagram. The default is one per day at 12pm Eastern; each clip's date, time, and platforms can be changed, or it can be posted now.
+5. The user reviews them, swaps any out if they want, and schedules them through OpusClip to YouTube, TikTok, and Instagram. The default is one per day at 12pm Eastern; each clip's date, time, platforms, and caption can be changed, or it can be posted now. The same caption goes to all three platforms.
 
 Every clip needs a headline baked into the video before it's scheduled or posted. Submitting to Opus spends credits and posting is public, so both always need an explicit confirm step that names the platforms and accounts. Post only to the "Exponent" YouTube channel and the Aced TikTok and Instagram accounts, never to Ace Your Interviews.
 
 ## Phases
 
-1. **MVP 1: Generator (current focus).** Submit 2 YouTube links, OpusClip clips them, the agent scores them, the top 7 are highlighted, and they're posted through OpusClip to YouTube (Exponent channel), TikTok, and Instagram (Aced accounts), with captions written per platform. See Weekly flow.
+1. **MVP 1: Generator (current focus).** Submit 2 YouTube links, OpusClip clips them, the agent scores them, the top 7 are highlighted, and they're posted through OpusClip to YouTube (Exponent channel), TikTok, and Instagram (Aced accounts), with one caption per clip used on all three. See Weekly flow.
 2. **Phase 2:** YouTube metrics, V1 data import, Vercel deploy, login, GitHub Actions routines.
 3. **Phase 3:** Instagram and TikTok metrics and their own APIs. (Posting to them through OpusClip is already part of MVP 1.)
 4. **Phase 4:** RAG, similar-clip retrieval, weekly learnings.

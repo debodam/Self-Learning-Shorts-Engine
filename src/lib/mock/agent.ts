@@ -1,5 +1,5 @@
 import type { ClipForAgent, WeekClipResult } from "@/lib/agent/prompts";
-import { shouldCut, type PlatformCaptions } from "@/lib/agent/rules";
+import { shouldCut, type ClipCaption } from "@/lib/agent/rules";
 import type { ClipScore, WeeklyLearningDraft } from "@/lib/integrations/claude";
 import { mockCandidateClips } from "@/lib/mock/candidate-clips";
 
@@ -31,23 +31,12 @@ export function mockClipScore(clip: ClipForAgent): ClipScore {
   };
 }
 
-export function mockCaptions(clip: ClipForAgent): PlatformCaptions {
-  const title = shortTitle(clip.title);
-  const hook = clip.title.endsWith(".") ? clip.title : `${clip.title}.`;
+export function mockCaption(clip: ClipForAgent): ClipCaption {
   const topic = clip.format === "mock" ? "#mockinterview" : "#techcareers";
   return {
-    youtube: {
-      title,
-      description: `A real moment from "${clip.sourceVideoTitle}".`,
-      hashtags: ["#interviewprep", topic, "#shorts"],
-    },
-    tiktok: { hook, hashtags: ["#interviewprep", topic, "#careertok"] },
-    instagram: {
-      hook,
-      context: [`From "${clip.sourceVideoTitle}".`, "Watch how the answer comes together under pressure."],
-      cta: "Follow Aced for more real interview moments.",
-      hashtags: ["#interviewprep", topic, "#techjobs", "#careeradvice", "#jobsearch"],
-    },
+    title: shortTitle(clip.title),
+    context: [`A real moment from "${clip.sourceVideoTitle}".`],
+    hashtags: ["#interviewprep", topic, "#careeradvice"],
   };
 }
 
