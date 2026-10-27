@@ -86,6 +86,10 @@ export type CandidateClip = {
   opusClipId?: string | null;
   youtubeTitle?: string | null;
   youtubeDescription?: string | null;
+  tiktokCaption?: string | null;
+  instagramCaption?: string | null;
+  /** Posted right away (Post now) rather than scheduled. */
+  posted?: boolean;
   transcript?: string | null;
   /** Missing for clips that didn't come from Opus, or when Opus couldn't be reached. */
   opus?: OpusMedia;

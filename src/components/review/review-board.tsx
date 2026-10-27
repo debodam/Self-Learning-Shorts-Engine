@@ -5,7 +5,7 @@ import { CalendarClock, Search } from "lucide-react";
 import { addMissingPickHeadlines, togglePick } from "@/app/review/actions";
 import { ClipCard } from "@/components/review/clip-card";
 import type { OpusProjectOption } from "@/components/review/opus-sync";
-import { ScheduleDialog } from "@/components/review/schedule-dialog";
+import { ScheduleDialog, type PostAccounts } from "@/components/review/schedule-dialog";
 import { WEEKLY_APPROVAL_TARGET, type CandidateClip } from "@/lib/clips";
 
 type StatusFilter = "all" | "picks" | "cut";
@@ -23,6 +23,7 @@ export function ReviewBoard({
   weeks,
   batches,
   bookedDates,
+  postAccounts,
 }: {
   clips: CandidateClip[];
   /** Newest first; the first is the current week. */
@@ -30,6 +31,7 @@ export function ReviewBoard({
   batches: OpusProjectOption[];
   /** New York dates that already have a post, so the schedule skips them. */
   bookedDates: string[];
+  postAccounts: PostAccounts;
 }) {
   const currentWeekId = weeks[0]?.id ?? null;
   const [query, setQuery] = useState("");
@@ -46,10 +48,10 @@ export function ReviewBoard({
   const picks = clips.filter((c) => c.picked && c.weekId === currentWeekId && currentWeekId);
   const pickCount = picks.length;
   const overTarget = pickCount > WEEKLY_APPROVAL_TARGET;
-  const unscheduledCount = picks.filter((c) => !c.scheduledFor).length;
+  const unscheduledCount = picks.filter((c) => !c.scheduledFor && !c.posted).length;
   // Every unscheduled pick needs a headline in the video before it can be scheduled.
   // Picks Opus couldn't be checked for (render unknown) are left to the server's check.
-  const missingHeadlines = picks.filter((c) => !c.scheduledFor && c.render && !c.headline);
+  const missingHeadlines = picks.filter((c) => !c.scheduledFor && !c.posted && c.render && !c.headline);
   const canSchedule = pickCount === WEEKLY_APPROVAL_TARGET && unscheduledCount > 0 && missingHeadlines.length === 0;
 
   function addMissing() {
@@ -62,7 +64,7 @@ export function ReviewBoard({
   }
   // Scheduled clips are locked in; cancel the post on the Schedule page to change them.
   const pickable = (clip: CandidateClip) =>
-    Boolean(currentWeekId && clip.weekId === currentWeekId && clip.scores && !clip.cut && !clip.scheduledFor);
+    Boolean(currentWeekId && clip.weekId === currentWeekId && clip.scores && !clip.cut && !clip.scheduledFor && !clip.posted);
 
   function toggle(clip: CandidateClip) {
     if (!currentWeekId) return;
@@ -222,7 +224,15 @@ export function ReviewBoard({
       )}
 
       {scheduling && currentWeekId && (
-        <ScheduleDialog weekId={currentWeekId} picks={picks} bookedDates={bookedDates} onClose={() => setScheduling(false)} />
+        <ScheduleDialog
+          // Reloads the preview's fields once captions are written, so they show the new text.
+          key={picks.map((c) => (c.tiktokCaption ? "1" : "0")).join("")}
+          weekId={currentWeekId}
+          picks={picks}
+          bookedDates={bookedDates}
+          postAccounts={postAccounts}
+          onClose={() => setScheduling(false)}
+        />
       )}
     </>
   );

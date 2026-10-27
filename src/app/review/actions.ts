@@ -7,7 +7,19 @@ import { isIntegrationConnected } from "@/lib/integrations/config";
 import { checkViewerText } from "@/lib/agent/rules";
 import { setClipHeadline } from "@/lib/integrations/opus";
 import { syncOpusProject } from "@/lib/opus-sync";
-import { addMissingHeadlines, cancelPost, checkWeek, opusWritable, savePicksForLater, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
+import {
+  addMissingHeadlines,
+  cancelPost,
+  checkWeek,
+  opusWritable,
+  PLATFORMS,
+  publishClips,
+  savePicksForLater,
+  setPick,
+  startWeek,
+  writePickCaptions,
+  type PostItem,
+} from "@/lib/weeks";
 
 export type SyncFromOpusResult = { ok: boolean; message: string };
 export type ScoreClipsResult = SyncFromOpusResult;
@@ -133,48 +145,85 @@ export async function togglePick(weekId: string, clipId: string, picked: boolean
 
 export type ScheduleResult = SyncFromOpusResult;
 
-const slotFormat = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" });
+const slotFormat = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "America/New_York",
+  timeZoneName: "short",
+});
+
+const PLATFORM_SET = new Set<string>(PLATFORMS);
+
+const validItems = (items: unknown): items is PostItem[] =>
+  Array.isArray(items) &&
+  items.every(
+    (i) =>
+      typeof i?.clipId === "string" &&
+      Array.isArray(i.platforms) &&
+      i.platforms.every((p: unknown) => typeof p === "string" && PLATFORM_SET.has(p)) &&
+      (i.publishAt === null || typeof i.publishAt === "string") &&
+      ["youtubeTitle", "youtubeDescription", "tiktokCaption", "instagramCaption"].every((k) => typeof i[k] === "string"),
+  );
 
 /**
- * Schedules the week's unscheduled picks on the Exponent YouTube channel through Opus,
- * with the preview's titles and descriptions. testOne schedules only the first. Only
- * called from the schedule preview's confirm buttons.
+ * Schedules clips (publishAt set) or posts one now (publishAt null) through OpusClip on
+ * each clip's chosen platforms. Only called from the schedule preview's confirm buttons,
+ * after a confirm dialog that lists the platforms and accounts.
  */
-type PreviewItem = { clipId: string; title: string; description: string };
-
-const validItems = (items: unknown): items is PreviewItem[] =>
-  Array.isArray(items) &&
-  items.every((i) => typeof i?.clipId === "string" && typeof i?.title === "string" && typeof i?.description === "string");
-
-export async function scheduleWeekPicks(weekId: string, items: PreviewItem[], startDate: string, testOne = false): Promise<ScheduleResult> {
-  if (typeof weekId !== "string" || typeof startDate !== "string" || !validItems(items)) return { ok: false, message: "Nothing to schedule." };
+export async function publishPicks(weekId: string, items: PostItem[]): Promise<ScheduleResult> {
+  if (typeof weekId !== "string" || !validItems(items)) return { ok: false, message: "Nothing to post." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
 
   try {
-    const result = await scheduleWeek(db, weekId, items, { limit: testOne === true ? 1 : undefined, startDate });
+    const { published } = await publishClips(db, weekId, items);
     refresh();
-    const posts = result.scheduled.map((p) => `"${p.title}" on ${slotFormat.format(new Date(p.publishAt))}`).join(", ");
-    const rest = result.remaining ? ` ${result.remaining} left to schedule.` : "";
-    return { ok: true, message: `Scheduled ${posts} at 12pm Eastern on the "${result.account}" YouTube channel.${rest}` };
+    const byClip = new Map<string, typeof published>();
+    for (const p of published) byClip.set(p.clipId, [...(byClip.get(p.clipId) ?? []), p]);
+    const lines = [...byClip.values()].map((posts) => {
+      const when = posts[0].publishAt ? `scheduled for ${slotFormat.format(new Date(posts[0].publishAt))}` : "posted now";
+      return `"${posts[0].title}" ${when} on ${posts.map((p) => p.account).join(", ")}`;
+    });
+    return { ok: true, message: `${lines.join(". ")}.` };
   } catch (error) {
-    console.error("Scheduling failed:", error);
-    return { ok: false, message: message(error, "Couldn't schedule.") };
+    console.error("Posting failed:", error);
+    refresh();
+    return { ok: false, message: message(error, "Couldn't post.") };
   }
 }
 
-/** Saves the week's picks as Ready to schedule, with the preview's text. Schedules nothing. */
-export async function savePicks(weekId: string, items: PreviewItem[]): Promise<ScheduleResult> {
+/** Saves the week's picks as Ready to schedule, with the preview's text. Posts nothing. */
+export async function savePicks(weekId: string, items: PostItem[]): Promise<ScheduleResult> {
   if (typeof weekId !== "string" || !validItems(items)) return { ok: false, message: "Nothing to save." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
   try {
     const saved = await savePicksForLater(db, weekId, items);
     refresh();
-    return { ok: true, message: `Saved ${saved} picks as Ready to schedule. Nothing was scheduled; open Schedule again when you're ready.` };
+    return { ok: true, message: `Saved ${saved} picks as Ready to schedule. Nothing was posted; open Schedule again when you're ready.` };
   } catch (error) {
     return { ok: false, message: message(error, "Couldn't save the picks.") };
+  }
+}
+
+/** Writes YouTube, TikTok, and Instagram captions for picks that don't have them. Uses Claude. */
+export async function writeCaptionsForPicks(weekId: string): Promise<ScheduleResult> {
+  if (typeof weekId !== "string") return { ok: false, message: "No week." };
+  const db = getDb();
+  if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
+  try {
+    const { written, failed, costUsd } = await writePickCaptions(db, weekId);
+    refresh();
+    const cost = costUsd ? ` About $${costUsd.toFixed(3)}.` : "";
+    if (failed.length) return { ok: false, message: `Wrote captions for ${written}. Failed: ${failed.join("; ")}.${cost}` };
+    return { ok: true, message: written ? `Wrote captions for ${written} ${written === 1 ? "clip" : "clips"}.${cost}` : "Every pick already has captions." };
+  } catch (error) {
+    console.error("Writing captions failed:", error);
+    return { ok: false, message: message(error, "Couldn't write captions.") };
   }
 }
 

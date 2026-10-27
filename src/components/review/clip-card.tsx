@@ -88,7 +88,8 @@ export function ClipCard({
         {!playing && (
           <span className="pointer-events-none absolute left-2 top-2 flex gap-1">
             <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">{formatLabels[clip.format]}</span>
-            {clip.picked && !clip.scheduledFor && (
+            {clip.posted && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Posted</span>}
+            {clip.picked && !clip.scheduledFor && !clip.posted && (
               <span className="rounded-full bg-primary-tint px-2 py-0.5 text-xs font-medium text-primary">
                 {clip.readyToSchedule ? "Ready to schedule" : "Top 7"}
               </span>

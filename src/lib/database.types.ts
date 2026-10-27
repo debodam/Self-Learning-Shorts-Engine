@@ -91,6 +91,9 @@ export type Database = {
           people_count: number | null
           text_readable: boolean | null
           picked: boolean
+          captions_generated_at: string | null
+          instagram_caption: string | null
+          tiktok_caption: string | null
         }
         Insert: {
           created_at?: string
@@ -125,6 +128,9 @@ export type Database = {
           people_count?: number | null
           text_readable?: boolean | null
           picked?: boolean
+          captions_generated_at?: string | null
+          instagram_caption?: string | null
+          tiktok_caption?: string | null
         }
         Update: {
           created_at?: string
@@ -159,6 +165,9 @@ export type Database = {
           people_count?: number | null
           text_readable?: boolean | null
           picked?: boolean
+          captions_generated_at?: string | null
+          instagram_caption?: string | null
+          tiktok_caption?: string | null
         }
         Relationships: [
           {
@@ -252,6 +261,7 @@ export type Database = {
           posted_at: string | null
           scheduled_for: string | null
           status: Database["public"]["Enums"]["post_status"]
+          account_name: string | null
         }
         Insert: {
           caption?: string | null
@@ -263,6 +273,7 @@ export type Database = {
           posted_at?: string | null
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["post_status"]
+          account_name?: string | null
         }
         Update: {
           caption?: string | null
@@ -274,6 +285,7 @@ export type Database = {
           posted_at?: string | null
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["post_status"]
+          account_name?: string | null
         }
         Relationships: [
           {

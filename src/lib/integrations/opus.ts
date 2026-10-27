@@ -184,14 +184,24 @@ export type OpusSocialAccount = {
   platform: string;
   /** The channel or account name. */
   name: string;
+  /** Instagram business accounts (and Facebook pages) need this when posting. */
+  subAccountId: string | null;
+  /** e.g. https://www.tiktok.com/@aced_io */
+  profileUrl: string | null;
 };
 
 /** Social accounts connected to the Opus organization. Docs: GET /api/social-accounts */
 export async function listSocialAccounts(): Promise<OpusSocialAccount[]> {
   if (!connected()) return mockSocialAccounts;
-  type Raw = { postAccountId: string; platform: string; extUserName?: string };
+  type Raw = { postAccountId: string; platform: string; extUserName?: string; subAccountId?: string; extUserProfileLink?: string };
   const res = await fetchJson<{ data: Raw[] }>("OpusClip", `${BASE_URL}/social-accounts?q=mine`, { headers: headers() });
-  return res.data.map((a) => ({ postAccountId: a.postAccountId, platform: a.platform, name: a.extUserName ?? "" }));
+  return res.data.map((a) => ({
+    postAccountId: a.postAccountId,
+    platform: a.platform,
+    name: a.extUserName ?? "",
+    subAccountId: a.subAccountId ?? null,
+    profileUrl: a.extUserProfileLink ?? null,
+  }));
 }
 
 /** Lists clip projects, newest first. */
@@ -576,7 +586,7 @@ export type SchedulePostInput = {
   /** From GET /api/social-accounts?q=mine. One per connected platform account. */
   postAccountId: string;
   /** Required for Instagram business accounts. */
-  subAccountId?: string;
+  subAccountId?: string | null;
   /** Must be in the future. Converted to UTC ISO 8601. */
   publishAt: Date;
   title: string;
@@ -612,6 +622,33 @@ export async function schedulePost(input: SchedulePostInput): Promise<{ schedule
     body: JSON.stringify(body),
   });
   return { scheduleId: res.data.scheduleId };
+}
+
+export type PostNowInput = Omit<SchedulePostInput, "publishAt">;
+
+/** Publishes a clip to one connected account right away. Docs: POST /api/post-tasks */
+export async function postNow(input: PostNowInput): Promise<{ postId: string }> {
+  if (!connected()) return { postId: `mock_post_${input.clipId}_${input.postAccountId}_${Date.now()}` };
+  const body = {
+    projectId: input.projectId,
+    clipId: input.clipId,
+    postAccountId: input.postAccountId,
+    ...(input.subAccountId && { subAccountId: input.subAccountId }),
+    postDetail: {
+      title: input.title,
+      mediaType: "video",
+      custom: {
+        ...(input.description && { description: input.description }),
+        ...(input.privacy && { privacy: input.privacy }),
+      },
+    },
+  };
+  const res = await fetchJson<{ data: { postId: string } }>("OpusClip", `${BASE_URL}/post-tasks`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  return { postId: res.data.postId };
 }
 
 /** Cancels a scheduled post before it publishes. Docs: DELETE /api/publish-schedules/{scheduleId} */

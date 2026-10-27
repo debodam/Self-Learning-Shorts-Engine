@@ -11,7 +11,7 @@ export default function SchedulePage() {
     <>
       <PageHeader
         title="Schedule"
-        description="Upcoming posts on the Exponent YouTube channel through OpusClip, soonest first. Cancel removes a post from OpusClip too."
+        description="Upcoming posts on YouTube, TikTok, and Instagram through OpusClip, soonest first. Cancel removes a post from OpusClip too."
       />
       <Suspense fallback={<LoadingCard className="h-64" />}>
         <UpcomingPosts />
@@ -19,6 +19,8 @@ export default function SchedulePage() {
     </>
   );
 }
+
+const PLATFORM_LABELS: Record<string, string> = { youtube: "YouTube", tiktok: "TikTok", instagram: "Instagram" };
 
 const slotFormat = new Intl.DateTimeFormat("en-US", {
   weekday: "short",
@@ -46,7 +48,10 @@ async function UpcomingPosts() {
           <li key={post.id} className="flex flex-col gap-3 border-b border-line px-6 py-4 last:border-0 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="font-medium text-heading">{post.clipTitle}</p>
-              <p className="text-sm text-muted">YouTube, {slotFormat.format(new Date(post.scheduledFor))}</p>
+              <p className="text-sm text-muted">
+                {PLATFORM_LABELS[post.platform] ?? post.platform}
+                {post.accountName ? ` (${post.accountName})` : ""}, {slotFormat.format(new Date(post.scheduledFor))}
+              </p>
             </div>
             <CancelPostButton postId={post.id} title={post.clipTitle} />
           </li>

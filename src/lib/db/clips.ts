@@ -34,11 +34,11 @@ export async function getReviewClips(): Promise<ReviewClips> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, status)",
+      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, tiktok_caption, instagram_caption, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, status)",
     )
-    // Cut clips are saved as rejected, picks saved for later as approved. Scheduled clips
-    // stay visible as part of their week's picks.
-    .in("status", ["candidate", "approved", "rejected", "scheduled"])
+    // Cut clips are saved as rejected, picks saved for later as approved. Scheduled and
+    // posted clips stay visible as part of their week's picks.
+    .in("status", ["candidate", "approved", "rejected", "scheduled", "posted"])
     .order("created_at", { ascending: false });
   if (error) throw new Error(`Failed to load clips: ${error.message}`);
 
@@ -78,10 +78,17 @@ export async function getReviewClips(): Promise<ReviewClips> {
           : null,
       picked: row.picked,
       readyToSchedule: row.status === "approved",
-      scheduledFor: row.status === "scheduled" ? (row.posts.find((p) => p.status === "scheduled")?.scheduled_for ?? null) : null,
+      // The earliest of the clip's scheduled posts (one per platform).
+      scheduledFor:
+        row.status === "scheduled"
+          ? (row.posts.filter((p) => p.status === "scheduled" && p.scheduled_for).map((p) => p.scheduled_for!).sort()[0] ?? null)
+          : null,
+      posted: row.status === "posted",
       weekId: row.source_videos.week_id,
       youtubeTitle: row.youtube_title,
       youtubeDescription: row.youtube_description,
+      tiktokCaption: row.tiktok_caption,
+      instagramCaption: row.instagram_caption,
       opusClipId: row.opus_clip_id,
       // Composite Opus IDs are "{projectId}.{clipId}".
       batchId: row.opus_clip_id?.split(".")[0],
@@ -118,7 +125,7 @@ export async function getWeeks(): Promise<Week[]> {
   }));
 }
 
-export type UpcomingPost = { id: string; clipTitle: string; scheduledFor: string; status: string };
+export type UpcomingPost = { id: string; clipTitle: string; scheduledFor: string; status: string; platform: string; accountName: string | null };
 
 /** Posts scheduled from now on, soonest first. */
 export async function getUpcomingPosts(): Promise<UpcomingPost[]> {
@@ -128,12 +135,19 @@ export async function getUpcomingPosts(): Promise<UpcomingPost[]> {
 
   const { data, error } = await db
     .from("posts")
-    .select("id, scheduled_for, status, clips (title, youtube_title)")
+    .select("id, scheduled_for, status, platform, account_name, clips (title, youtube_title)")
     .eq("status", "scheduled")
     .gte("scheduled_for", new Date().toISOString())
     .order("scheduled_for");
   if (error) throw new Error(`Failed to load the schedule: ${error.message}`);
-  return data.map((p) => ({ id: p.id, clipTitle: p.clips.youtube_title ?? p.clips.title, scheduledFor: p.scheduled_for!, status: p.status }));
+  return data.map((p) => ({
+    id: p.id,
+    clipTitle: p.clips.youtube_title ?? p.clips.title,
+    scheduledFor: p.scheduled_for!,
+    status: p.status,
+    platform: p.platform,
+    accountName: p.account_name,
+  }));
 }
 
 /**

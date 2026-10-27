@@ -12,7 +12,7 @@ import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds, getW
 import { isIntegrationConnected, isOpusMockForced } from "@/lib/integrations/config";
 import { listProjects } from "@/lib/integrations/opus";
 import { getDb } from "@/lib/db/client";
-import { bookedDates } from "@/lib/weeks";
+import { bookedDates, resolvePostAccounts } from "@/lib/weeks";
 
 // Scoring every synced clip can take a few minutes, and server actions share the page's limit.
 export const maxDuration = 300;
@@ -91,6 +91,14 @@ async function CandidateClips() {
   const clips = await withPickRenders(allClips, weeks[0]?.id ?? null);
   const db = getDb();
   const booked = db ? await bookedDates(db) : [];
+  // The accounts each post goes to, shown in every confirm. An error blocks posting.
+  const postAccounts = await resolvePostAccounts().then(
+    (accounts) => ({
+      accounts: Object.fromEntries(Object.entries(accounts).map(([k, a]) => [k, a.handle === a.name ? a.name : `${a.handle} (${a.name})`])),
+      error: null,
+    }),
+    (error: unknown) => ({ accounts: null, error: error instanceof Error ? error.message : String(error) }),
+  );
   const supabase = isIntegrationConnected("supabase");
   const weekPanel = supabase && <WeekPanel currentWeek={weeks[0] ?? null} mockOpus={isOpusMockForced()} />;
   if (clips.length === 0) {
@@ -122,6 +130,7 @@ async function CandidateClips() {
         weeks={weeks.map((w) => ({ id: w.id, label: weekLabel(w.startsOn) }))}
         batches={batches}
         bookedDates={booked}
+        postAccounts={postAccounts}
       />
     </>
   );

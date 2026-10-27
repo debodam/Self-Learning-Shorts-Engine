@@ -93,9 +93,10 @@ export const mockOpusScheduledPosts: OpusScheduledPost[] = [
 
 /** Same names as the real organization's accounts, so the account checks can be tested. */
 export const mockSocialAccounts: OpusSocialAccount[] = [
-  { postAccountId: "mock_youtube_exponent", platform: "YOUTUBE", name: "Exponent" },
-  { postAccountId: "mock_youtube_ace_your_interviews", platform: "YOUTUBE", name: "Ace Your Interviews" },
-  { postAccountId: "mock_tiktok_aced", platform: "TIKTOK_BUSINESS", name: "Aced (formerly Exponent)" },
+  { postAccountId: "mock_youtube_exponent", platform: "YOUTUBE", name: "Exponent", subAccountId: null, profileUrl: "https://www.youtube.com/channel/mock-exponent" },
+  { postAccountId: "mock_youtube_ace_your_interviews", platform: "YOUTUBE", name: "Ace Your Interviews", subAccountId: null, profileUrl: null },
+  { postAccountId: "mock_tiktok_aced", platform: "TIKTOK_BUSINESS", name: "Aced (formerly Exponent)", subAccountId: null, profileUrl: "https://www.tiktok.com/@aced_io" },
+  { postAccountId: "mock_instagram_aced", platform: "INSTAGRAM_BUSINESS", name: "Aced (formerly Exponent)", subAccountId: "mock_ig_sub", profileUrl: "https://www.instagram.com/aced__io" },
 ];
 
 const MOCK_CLIP_SCRIPTS: { title: string; transcript: string; durationSeconds: number }[] = [

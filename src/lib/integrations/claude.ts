@@ -344,11 +344,14 @@ const MAX_CAPTION_ATTEMPTS = 2;
  * Writes YouTube, TikTok, and Instagram copy for an approved clip. Checks it against the
  * caption rules and asks Claude to fix any problems once before giving up.
  */
-export async function writeCaptions(clip: ClipForAgent): Promise<PlatformCaptions> {
-  if (!connected()) return mockCaptions(clip);
+export const CAPTIONS_MODEL = MODEL;
+
+export async function writeCaptions(clip: ClipForAgent): Promise<{ captions: PlatformCaptions; usage: TokenUsage }> {
+  if (!connected()) return { captions: mockCaptions(clip), usage: emptyUsage() };
 
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: buildCaptionsMessage(clip) }];
   let issues: string[] = [];
+  let usage = emptyUsage();
   for (let attempt = 1; attempt <= MAX_CAPTION_ATTEMPTS; attempt++) {
     const response = await getClient().beta.messages.parse({
       model: MODEL,
@@ -360,12 +363,13 @@ export async function writeCaptions(clip: ClipForAgent): Promise<PlatformCaption
       system: [{ type: "text", text: CAPTIONS_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages,
     });
+    usage = addUsage(usage, toUsage(response.usage));
     assertUsable(response, "write captions");
     const captions = response.parsed_output;
     if (!captions) throw new Error("Claude returned no parseable captions");
 
     issues = validateCaptions(captions);
-    if (issues.length === 0) return captions;
+    if (issues.length === 0) return { captions, usage };
     // Append the whole response unchanged (thinking blocks included) before the follow-up.
     messages.push({ role: "assistant", content: response.content }, { role: "user", content: buildCaptionsRepairMessage(issues) });
   }

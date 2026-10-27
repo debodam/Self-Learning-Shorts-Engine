@@ -15,16 +15,46 @@ export function addDays(date: string, n: number) {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
-/** The UTC moment it's noon in New York on a date, across daylight saving changes. */
-export function noonEastern(date: string) {
+/** The default posting time, "HH:MM" in New York. */
+export const DEFAULT_POST_TIME = `${String(POST_HOUR).padStart(2, "0")}:00`;
+
+/** "HH:MM" (24 hour) for a moment, in New York. */
+export function easternTime(at: Date) {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+}
+
+/**
+ * The UTC moment for a New York date and "HH:MM" time, across daylight saving changes.
+ * Null for a time that doesn't exist that day (the hour skipped when clocks spring forward).
+ */
+export function easternToUtc(date: string, time: string): Date | null {
   const [y, m, d] = date.split("-").map(Number);
-  // Noon Eastern is 16:00 UTC in daylight time and 17:00 UTC in standard time.
-  for (const utcHour of [POST_HOUR + 4, POST_HOUR + 5]) {
-    const at = new Date(Date.UTC(y, m - 1, d, utcHour));
-    const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, hour: "numeric", hourCycle: "h23" }).format(at));
-    if (hour === POST_HOUR) return at;
+  const [hh, mm] = time.split(":").map(Number);
+  if ([y, m, d, hh, mm].some((n) => !Number.isFinite(n))) return null;
+  // New York is 4 hours behind UTC in daylight time and 5 in standard time.
+  for (const offset of [4, 5]) {
+    const at = new Date(Date.UTC(y, m - 1, d, hh + offset, mm));
+    if (easternDate(at) === date && easternTime(at) === time) return at;
   }
-  throw new Error(`Couldn't find noon Eastern on ${date}`);
+  return null;
+}
+
+/** The UTC moment it's noon in New York on a date. */
+export function noonEastern(date: string) {
+  const at = easternToUtc(date, DEFAULT_POST_TIME);
+  if (!at) throw new Error(`Couldn't find noon Eastern on ${date}`);
+  return at;
+}
+
+/** The user's local zone, shown next to Eastern times. */
+export const LOCAL_TIME_ZONE = "America/Denver";
+
+/** e.g. "10:00 AM MT" for a moment, in the user's local (Mountain) time. */
+export function localTimeLabel(at: Date) {
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: LOCAL_TIME_ZONE, hour: "numeric", minute: "2-digit" }).format(at);
+  const sameDay = easternDate(at) === new Intl.DateTimeFormat("en-CA", { timeZone: LOCAL_TIME_ZONE }).format(at);
+  const day = sameDay ? "" : ` ${new Intl.DateTimeFormat("en-US", { timeZone: LOCAL_TIME_ZONE, weekday: "short" }).format(at)}`;
+  return `${time}${day} MT`;
 }
 
 /** The first Sunday strictly after a date. */
