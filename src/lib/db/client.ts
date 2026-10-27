@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { isIntegrationConnected } from "@/lib/integrations";
+import { isIntegrationConnected } from "@/lib/integrations/config";
 
 export type Db = SupabaseClient<Database>;
 

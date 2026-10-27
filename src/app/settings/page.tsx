@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/page-header";
-import { integrations, integrationStatus } from "@/lib/integrations";
+import { integrations, integrationStatus } from "@/lib/integrations/config";
 
 export default function SettingsPage() {
   return (
