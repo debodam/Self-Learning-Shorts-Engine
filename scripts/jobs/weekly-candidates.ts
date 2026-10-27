@@ -1,7 +1,5 @@
-import type { SimilarClip } from "@/lib/agent/prompts";
-import type { ClipFormat } from "@/lib/clips";
-import type { Db } from "@/lib/db/client";
-import { scoreClip } from "@/lib/integrations/claude";
+import { scoreUnscoredClips } from "@/lib/clip-scoring";
+import { addUsage, emptyUsage, estimateCostUsd, scoreClip, SCORING_MODEL } from "@/lib/integrations/claude";
 import { listClips, submitVideo } from "@/lib/integrations/opus";
 import { listRecentUploads } from "@/lib/integrations/youtube";
 import { formatFromTitle, saveOpusClips } from "@/lib/opus-sync";
@@ -15,7 +13,6 @@ import { must, runJob, type JobContext } from "./lib";
 // arrive on the next run.
 
 const UPLOADS_TO_CHECK = 25;
-const PAST_CLIPS_FOR_CALIBRATION = 20;
 const DRY_RUN_SCORE_LIMIT = 3;
 
 async function submitNewUploads({ db, dryRun, log }: JobContext) {
@@ -72,98 +69,32 @@ async function importFinishedProjects({ db, log }: JobContext) {
   }
 }
 
-/** Recently posted clips with their latest views, so the agent can calibrate predictions. */
-async function loadPastClips(db: Db): Promise<SimilarClip[]> {
-  const rows = must(
-    await db
-      .from("clips")
-      .select("title, format, hook_type, score_total, posts (platform, metrics (views, captured_at))")
-      .eq("status", "posted")
-      .order("created_at", { ascending: false })
-      .order("captured_at", { referencedTable: "posts.metrics", ascending: false })
-      .limit(1, { referencedTable: "posts.metrics" })
-      .limit(PAST_CLIPS_FOR_CALIBRATION),
-    "load past clips",
-  );
-  return rows.map((r) => ({
-    title: r.title,
-    format: r.format,
-    hookType: r.hook_type,
-    scoreTotal: r.score_total,
-    views: Object.fromEntries(r.posts.flatMap((p) => (p.metrics[0]?.views != null ? [[p.platform, p.metrics[0].views]] : []))),
-  }));
-}
-
-async function scoreUnscoredClips({ db, dryRun, log }: JobContext) {
-  type Unscored = { id: string; title: string; transcript: string | null; format: ClipFormat; duration_seconds: number | null; source: string };
-  let unscored: Unscored[];
-  let pastClips: SimilarClip[] = [];
-
+async function scoreUnscored({ db, log }: JobContext) {
   if (db) {
-    const rows = must(
-      await db
-        .from("clips")
-        .select("id, title, transcript, format, duration_seconds, source_videos (title)")
-        .eq("status", "candidate")
-        .is("scored_at", null),
-      "load unscored clips",
-    );
-    unscored = rows.map((r) => ({ ...r, source: r.source_videos.title }));
-    pastClips = await loadPastClips(db);
-  } else {
-    // Dry run: score a few clips from Opus (mock data when Opus isn't connected) to show the output.
-    const uploads = await listRecentUploads({ limit: 1 });
-    // With a live Opus key there's no project to preview, so nothing is scored.
-    const projectId = uploads[0] ? await submitVideoPreview(uploads[0].url) : null;
-    const clips = projectId ? await listClips(projectId) : [];
-    unscored = clips.slice(0, DRY_RUN_SCORE_LIMIT).map((c) => ({
-      id: c.id,
-      title: c.title,
-      transcript: c.transcript,
+    const run = await scoreUnscoredClips(db, log);
+    log(`Scored ${run.scored}: ${run.scored - run.cut} kept as candidates, ${run.cut} cut, ${run.failed.length} failed.`);
+    return;
+  }
+
+  // Dry run: score a few clips from Opus (mock data when Opus isn't connected) to show the output.
+  const uploads = await listRecentUploads({ limit: 1 });
+  // With a live Opus key there's no project to preview, so nothing is scored.
+  const projectId = uploads[0] ? await submitVideoPreview(uploads[0].url) : null;
+  const clips = (projectId ? await listClips(projectId) : []).slice(0, DRY_RUN_SCORE_LIMIT);
+  log(`Scoring ${clips.length} clips with ${SCORING_MODEL}. Nothing is saved.`);
+  let usage = emptyUsage();
+  for (const clip of clips) {
+    const score = await scoreClip({
+      title: clip.title,
+      transcript: clip.transcript,
+      sourceVideoTitle: uploads[0].title,
       format: formatFromTitle(uploads[0].title),
-      duration_seconds: c.durationSeconds,
-      source: uploads[0].title,
-    }));
+      durationSeconds: clip.durationSeconds,
+    });
+    usage = addUsage(usage, score.usage);
+    log(`  ${score.cut ? "Cut" : "Kept"} "${clip.title}": ${score.total}/25. ${score.reasoning}`);
   }
-  log(`Scoring ${unscored.length} clips with ${pastClips.length} past clips for calibration.`);
-
-  let kept = 0;
-  for (const clip of unscored) {
-    if (!clip.transcript) {
-      log(`  Skipped "${clip.title}": no transcript.`);
-      continue;
-    }
-    const score = await scoreClip(
-      { title: clip.title, transcript: clip.transcript, sourceVideoTitle: clip.source, format: clip.format, durationSeconds: clip.duration_seconds },
-      pastClips.filter((p) => p.format === clip.format),
-    );
-    if (!score.cut) kept++;
-    log(`  ${score.cut ? "Cut" : "Kept"} "${clip.title}": ${score.total}/25, predicted ${score.predictedViews.tiktok} TikTok views.`);
-    if (dryRun) continue;
-
-    must(
-      await db!
-        .from("clips")
-        .update({
-          score_hook: score.scores.hook,
-          score_tension: score.scores.tension,
-          score_standalone: score.scores.standalone,
-          score_payoff: score.scores.payoff,
-          score_loopability: score.scores.loopability,
-          hook_type: score.hookType,
-          predicted_views_youtube: score.predictedViews.youtube,
-          predicted_views_tiktok: score.predictedViews.tiktok,
-          predicted_views_instagram: score.predictedViews.instagram,
-          score_reasoning: score.reasoning,
-          scored_at: new Date().toISOString(),
-          status: score.cut ? "rejected" : "candidate",
-        })
-        .eq("id", clip.id)
-        .select("id"),
-      `save score for ${clip.title}`,
-    );
-  }
-  log(`Scored ${unscored.length}: ${kept} kept as candidates, ${unscored.length - kept} cut.`);
+  log(`Tokens: ${usage.input} input, ${usage.output} output. Estimated cost: $${(estimateCostUsd(SCORING_MODEL, usage) ?? 0).toFixed(4)}.`);
 }
 
 /** In a dry run, find the Opus project for a URL without submitting anything. */
@@ -176,5 +107,5 @@ async function submitVideoPreview(url: string) {
 runJob("Weekly candidates", async (ctx) => {
   await submitNewUploads(ctx);
   await importFinishedProjects(ctx);
-  await scoreUnscoredClips(ctx);
+  await scoreUnscored(ctx);
 });

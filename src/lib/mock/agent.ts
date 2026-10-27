@@ -24,8 +24,10 @@ export function mockClipScore(clip: ClipForAgent): ClipScore {
     hookType: clip.format === "mock" ? "interviewer_pushback" : "insider_advice",
     predictedViews: known?.predictedViews ?? { youtube: 25000, tiktok: 32000, instagram: 12000 },
     suggestedTitle: shortTitle(clip.title),
+    youtube: { title: shortTitle(clip.title), description: `A real moment from "${clip.sourceVideoTitle}".` },
     framing: { speakerCount: twoSpeakers ? 2 : 1, layout: twoSpeakers ? "split" : "single", openOnLine: firstLine },
     reasoning: "Mock score: no Claude API key is set, so these are placeholder scores for layout and testing.",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   };
 }
 

@@ -9,6 +9,54 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      agent_runs: {
+        Row: {
+          cache_creation_input_tokens: number
+          cache_read_input_tokens: number
+          cost_usd: number | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          input_tokens: number
+          items_failed: number
+          items_processed: number
+          kind: string
+          model: string
+          output_tokens: number
+          started_at: string
+        }
+        Insert: {
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          cost_usd?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          input_tokens?: number
+          items_failed?: number
+          items_processed?: number
+          kind: string
+          model: string
+          output_tokens?: number
+          started_at?: string
+        }
+        Update: {
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          cost_usd?: number | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          input_tokens?: number
+          items_failed?: number
+          items_processed?: number
+          kind?: string
+          model?: string
+          output_tokens?: number
+          started_at?: string
+        }
+        Relationships: []
+      }
       clips: {
         Row: {
           created_at: string
@@ -32,8 +80,11 @@ export type Database = {
           scored_at: string | null
           source_video_id: string
           status: Database["public"]["Enums"]["clip_status"]
+          suggested_title: string | null
           title: string
           transcript: string | null
+          youtube_description: string | null
+          youtube_title: string | null
         }
         Insert: {
           created_at?: string
@@ -57,8 +108,11 @@ export type Database = {
           scored_at?: string | null
           source_video_id: string
           status?: Database["public"]["Enums"]["clip_status"]
+          suggested_title?: string | null
           title: string
           transcript?: string | null
+          youtube_description?: string | null
+          youtube_title?: string | null
         }
         Update: {
           created_at?: string
@@ -82,8 +136,11 @@ export type Database = {
           scored_at?: string | null
           source_video_id?: string
           status?: Database["public"]["Enums"]["clip_status"]
+          suggested_title?: string | null
           title?: string
           transcript?: string | null
+          youtube_description?: string | null
+          youtube_title?: string | null
         }
         Relationships: [
           {

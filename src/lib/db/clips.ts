@@ -1,15 +1,18 @@
 import "server-only";
 import { connection } from "next/server";
-import type { CandidateClip, OpusMedia } from "@/lib/clips";
+import { shouldCut } from "@/lib/agent/rules";
+import { totalScore, type CandidateClip, type OpusMedia } from "@/lib/clips";
+import { getLastScoringRun } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { listClipsCached, opusProjectUrl } from "@/lib/integrations/opus";
 import { mockCandidateClips } from "@/lib/mock/candidate-clips";
 
-const SHORTLIST_SIZE = 10;
-
-/** This week's scored shortlist, best total score first. */
-export async function getCandidateClips(): Promise<CandidateClip[]> {
+/**
+ * Every scored clip still up for review, kept and cut, best total score first. Ties go
+ * to the higher Opus score. The page takes the shortlist from the top of the kept clips.
+ */
+export async function getScoredClips(): Promise<CandidateClip[]> {
   await connection();
   const db = getDb();
   if (!db) return mockCandidateClips;
@@ -17,37 +20,54 @@ export async function getCandidateClips(): Promise<CandidateClip[]> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, opus_clip_id, title, format, duration_seconds, score_hook, score_tension, score_standalone, score_payoff, score_loopability, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title)",
+      "id, opus_clip_id, title, format, duration_seconds, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title)",
     )
-    .eq("status", "candidate")
+    // Cut clips are saved as rejected.
+    .in("status", ["candidate", "rejected"])
+    .not("scored_at", "is", null)
     .not("score_total", "is", null)
     .order("score_total", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(SHORTLIST_SIZE);
-  if (error) throw new Error(`Failed to load candidate clips: ${error.message}`);
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`Failed to load scored clips: ${error.message}`);
 
   const media = await getOpusMedia(data.map((row) => row.opus_clip_id));
-  return data.map((row) => ({
-    id: row.id,
-    title: row.title,
-    sourceVideo: row.source_videos.title,
-    format: row.format,
-    durationSeconds: row.duration_seconds,
+  const clips = data.map((row): CandidateClip => {
     // score_total is only set when all five scores are, so these are non-null.
-    scores: {
+    const scores = {
       hook: row.score_hook!,
       tension: row.score_tension!,
       standalone: row.score_standalone!,
       payoff: row.score_payoff!,
       loopability: row.score_loopability!,
-    },
-    // The scoring job sets all three together.
-    predictedViews:
-      row.predicted_views_youtube !== null && row.predicted_views_tiktok !== null && row.predicted_views_instagram !== null
-        ? { youtube: row.predicted_views_youtube, tiktok: row.predicted_views_tiktok, instagram: row.predicted_views_instagram }
-        : null,
-    opus: row.opus_clip_id ? media.get(row.opus_clip_id) : undefined,
-  }));
+    };
+    return {
+      id: row.id,
+      title: row.title,
+      sourceVideo: row.source_videos.title,
+      format: row.format,
+      durationSeconds: row.duration_seconds,
+      scores,
+      // The scoring job sets all three together.
+      predictedViews:
+        row.predicted_views_youtube !== null && row.predicted_views_tiktok !== null && row.predicted_views_instagram !== null
+          ? { youtube: row.predicted_views_youtube, tiktok: row.predicted_views_tiktok, instagram: row.predicted_views_instagram }
+          : null,
+      reason: row.score_reasoning,
+      suggestedTitle: row.suggested_title,
+      cut: shouldCut(scores),
+      opus: row.opus_clip_id ? media.get(row.opus_clip_id) : undefined,
+    };
+  });
+  return clips.sort(
+    (a, b) => totalScore(b.scores!) - totalScore(a.scores!) || (b.opus?.opusScore ?? -1) - (a.opus?.opusScore ?? -1),
+  );
+}
+
+/** The most recent scoring run, or null before the first run or without Supabase. */
+export async function getLastScoringRunSummary() {
+  await connection();
+  const db = getDb();
+  return db ? getLastScoringRun(db) : null;
 }
 
 /** Clips synced from Opus that the agent hasn't scored yet, best Opus score first. */

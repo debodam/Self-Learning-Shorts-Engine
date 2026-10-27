@@ -66,8 +66,9 @@ export function ClipCard({
             {formatDuration(clip.durationSeconds)}
           </span>
         )}
-        <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">
-          {formatLabels[clip.format]}
+        <span className="pointer-events-none absolute left-2 top-2 flex gap-1">
+          <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">{formatLabels[clip.format]}</span>
+          {clip.cut && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Cut</span>}
         </span>
         {clip.opus?.opusScore != null && (
           <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">
@@ -94,6 +95,23 @@ export function ClipCard({
             </a>
           )}
         </div>
+
+        {(clip.suggestedTitle || clip.reason) && (
+          <dl className="space-y-2 rounded-md bg-page px-3 py-2.5 text-sm">
+            {clip.suggestedTitle && (
+              <div>
+                <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Suggested title</dt>
+                <dd className="font-medium text-heading">{clip.suggestedTitle}</dd>
+              </div>
+            )}
+            {clip.reason && (
+              <div>
+                <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Why</dt>
+                <dd className="text-body">{clip.reason}</dd>
+              </div>
+            )}
+          </dl>
+        )}
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">

@@ -46,9 +46,13 @@ ${FRAMING}
 
 ${TITLE_RULES}
 
+The suggested title follows the title rules. Also write the YouTube Shorts copy:
+- youtube.title: under 60 characters, following the title rules. It can match the suggested title.
+- youtube.description: 1 to 2 lines that say what happens in the clip and what the viewer learns. No hashtags.
+
 ${BRAND_AND_STYLE}
 
-In your reasoning, explain the scores in two to four sentences a reviewer can skim, pointing to specific lines in the transcript.`;
+In your reasoning, explain the scores in one short sentence of at most 25 words that a reviewer can skim. Name the main strength or the main reason it's cut.`;
 
 export const CAPTIONS_SYSTEM_PROMPT = `${ABOUT_ACED}
 
@@ -104,6 +108,10 @@ function clipDetails(clip: ClipForAgent) {
   ];
   if (clip.durationSeconds) lines.push(`Length: ${clip.durationSeconds} seconds`);
   return `${lines.join("\n")}\n\n<transcript>\n${clip.transcript}\n</transcript>`;
+}
+
+export function buildScoringRepairMessage(issues: string[]) {
+  return `That breaks these rules:\n${issues.map((i) => `- ${i}`).join("\n")}\n\nScore the clip again with every rule met. Keep the scores unless the fix changes your judgment.`;
 }
 
 export function buildScoringMessage(clip: ClipForAgent, similarClips: SimilarClip[] = []) {

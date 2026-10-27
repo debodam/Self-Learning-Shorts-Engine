@@ -51,6 +51,12 @@ export type CandidateClip = {
   scores: Record<RubricCategory, number> | null;
   /** Predicted views in the first 7 days. Null until the agent scores the clip. */
   predictedViews: Record<Platform, number> | null;
+  /** The agent's one-line reason for the scores. */
+  reason?: string | null;
+  /** A factual title the agent suggests. title keeps the original. */
+  suggestedTitle?: string | null;
+  /** Scored under 3 on Hook or Standalone, so it can't be shortlisted. */
+  cut?: boolean;
   /** Missing for clips that didn't come from Opus, or when Opus couldn't be reached. */
   opus?: OpusMedia;
 };
