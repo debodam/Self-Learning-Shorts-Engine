@@ -328,6 +328,7 @@ export async function schedulePost(input: SchedulePostInput): Promise<{ schedule
     publishAt: input.publishAt.toISOString(),
     postDetail: {
       title: input.title,
+      mediaType: "video",
       custom: {
         ...(input.description && { description: input.description }),
         ...(input.privacy && { privacy: input.privacy }),
@@ -340,6 +341,15 @@ export async function schedulePost(input: SchedulePostInput): Promise<{ schedule
     body: JSON.stringify(body),
   });
   return { scheduleId: res.data.scheduleId };
+}
+
+/** Cancels a scheduled post before it publishes. Docs: DELETE /api/publish-schedules/{scheduleId} */
+export async function cancelScheduledPost(scheduleId: string): Promise<void> {
+  if (!connected()) return;
+  await fetchJson("OpusClip", `${BASE_URL}/publish-schedules/${encodeURIComponent(scheduleId)}`, {
+    method: "DELETE",
+    headers: headers(),
+  });
 }
 
 /** Lists upcoming scheduled posts. */

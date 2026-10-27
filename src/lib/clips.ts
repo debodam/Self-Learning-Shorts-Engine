@@ -63,6 +63,8 @@ export type CandidateClip = {
   vision?: { framesChecked: number; faceFrames: number; peopleCount: number; textReadable: boolean } | null;
   /** One of its week's picks to schedule. */
   picked?: boolean;
+  /** When the clip's YouTube post goes out. Set once it's scheduled. */
+  scheduledFor?: string | null;
   /** The week the clip's source video was submitted in. Missing for videos synced by hand. */
   weekId?: string | null;
   /** The Opus project the clip came from. Missing for clips not from Opus. */

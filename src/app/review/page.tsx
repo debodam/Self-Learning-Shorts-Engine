@@ -11,7 +11,8 @@ import { WeekPanel } from "@/components/review/week-panel";
 import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds, getWeeks } from "@/lib/db";
 import { isIntegrationConnected, isOpusMockForced } from "@/lib/integrations/config";
 import { listProjects } from "@/lib/integrations/opus";
-import { PICKS_PER_WEEK, postingSlots, schedulingLive } from "@/lib/weeks";
+import { getDb } from "@/lib/db/client";
+import { freeSlots, PICKS_PER_WEEK } from "@/lib/weeks";
 
 // Scoring every synced clip can take a few minutes, and server actions share the page's limit.
 export const maxDuration = 300;
@@ -87,6 +88,8 @@ async function CandidateClips() {
     loadProjectOptions().catch(() => []),
     getWeeks(),
   ]);
+  const db = getDb();
+  const slots = db ? await freeSlots(db, PICKS_PER_WEEK) : [];
   const supabase = isIntegrationConnected("supabase");
   const weekPanel = supabase && <WeekPanel currentWeek={weeks[0] ?? null} mockOpus={isOpusMockForced()} />;
   if (clips.length === 0) {
@@ -117,8 +120,7 @@ async function CandidateClips() {
         clips={clips}
         weeks={weeks.map((w) => ({ id: w.id, label: weekLabel(w.startsOn) }))}
         batches={batches}
-        slots={postingSlots(PICKS_PER_WEEK).map((d) => d.toISOString())}
-        schedulingLive={schedulingLive()}
+        slots={slots.map((d) => d.toISOString())}
       />
     </>
   );

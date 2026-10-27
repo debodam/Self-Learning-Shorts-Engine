@@ -34,10 +34,10 @@ export async function getReviewClips(): Promise<ReviewClips> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id)",
+      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, status)",
     )
-    // Cut clips are saved as rejected.
-    .in("status", ["candidate", "rejected"])
+    // Cut clips are saved as rejected. Scheduled clips stay visible as part of their week's picks.
+    .in("status", ["candidate", "rejected", "scheduled"])
     .order("created_at", { ascending: false });
   if (error) throw new Error(`Failed to load clips: ${error.message}`);
 
@@ -76,6 +76,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
           ? { framesChecked: row.frames_checked, faceFrames: row.face_frames, peopleCount: row.people_count ?? 0, textReadable: row.text_readable ?? true }
           : null,
       picked: row.picked,
+      scheduledFor: row.status === "scheduled" ? (row.posts.find((p) => p.status === "scheduled")?.scheduled_for ?? null) : null,
       weekId: row.source_videos.week_id,
       youtubeTitle: row.youtube_title,
       youtubeDescription: row.youtube_description,

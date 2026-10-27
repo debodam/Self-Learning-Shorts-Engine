@@ -5,7 +5,7 @@ import { runScoring } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { syncOpusProject } from "@/lib/opus-sync";
-import { checkWeek, opusWritable, PICKS_PER_WEEK, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
+import { cancelPost, checkWeek, opusWritable, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
 
 export type SyncFromOpusResult = { ok: boolean; message: string };
 export type ScoreClipsResult = SyncFromOpusResult;
@@ -128,33 +128,53 @@ export async function togglePick(weekId: string, clipId: string, picked: boolean
   }
 }
 
-export type ScheduleResult = SyncFromOpusResult & { live?: boolean };
+export type ScheduleResult = SyncFromOpusResult;
+
+const slotFormat = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" });
 
 /**
- * Schedules the week's 7 picks on YouTube through Opus. Only called from the schedule
- * preview's confirm button. Until OPUSCLIP_SCHEDULING_LIVE=true it's a dry run.
+ * Schedules the week's unscheduled picks on the Exponent YouTube channel through Opus,
+ * with the preview's titles and descriptions. testOne schedules only the first. Only
+ * called from the schedule preview's confirm buttons.
  */
-export async function scheduleWeekPicks(weekId: string, items: { clipId: string; title: string }[]): Promise<ScheduleResult> {
-  if (typeof weekId !== "string" || !Array.isArray(items) || items.some((i) => typeof i?.clipId !== "string" || typeof i?.title !== "string")) {
-    return { ok: false, message: "Nothing to schedule." };
-  }
+export async function scheduleWeekPicks(
+  weekId: string,
+  items: { clipId: string; title: string; description: string }[],
+  testOne = false,
+): Promise<ScheduleResult> {
+  const valid =
+    typeof weekId === "string" &&
+    Array.isArray(items) &&
+    items.every((i) => typeof i?.clipId === "string" && typeof i?.title === "string" && typeof i?.description === "string");
+  if (!valid) return { ok: false, message: "Nothing to schedule." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
 
   try {
-    const result = await scheduleWeek(db, weekId, items);
+    const result = await scheduleWeek(db, weekId, items, { limit: testOne === true ? 1 : undefined });
     refresh();
-    if (!result.live) {
-      return {
-        ok: true,
-        live: false,
-        message: `Dry run: titles saved, nothing was scheduled. Scheduling isn't live yet; when it is, these ${PICKS_PER_WEEK} posts go to the "${result.account}" YouTube channel.`,
-      };
-    }
-    return { ok: true, live: true, message: `Scheduled ${result.scheduled} clips on "${result.account}", one per day at 12pm Eastern.` };
+    const posts = result.scheduled.map((p) => `"${p.title}" on ${slotFormat.format(new Date(p.publishAt))}`).join(", ");
+    const rest = result.remaining ? ` ${result.remaining} left to schedule.` : "";
+    return { ok: true, message: `Scheduled ${posts} at 12pm Eastern on the "${result.account}" YouTube channel.${rest}` };
   } catch (error) {
     console.error("Scheduling failed:", error);
     return { ok: false, message: message(error, "Couldn't schedule.") };
+  }
+}
+
+/** Cancels one scheduled post in OpusClip and puts its clip back in the week's picks. */
+export async function cancelScheduled(postId: string): Promise<SyncFromOpusResult> {
+  if (typeof postId !== "string") return { ok: false, message: "No post to cancel." };
+  if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
+  const db = getDb();
+  if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
+  try {
+    await cancelPost(db, postId);
+    refresh();
+    return { ok: true, message: "Canceled in OpusClip." };
+  } catch (error) {
+    console.error("Canceling failed:", error);
+    return { ok: false, message: message(error, "Couldn't cancel.") };
   }
 }

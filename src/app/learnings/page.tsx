@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { ArrowRightLeft, CheckCircle2, Lightbulb, MessageSquareText } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, Lightbulb, MessageSquareText, Clock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { LoadingCard } from "@/components/loading-card";
 import { PageHeader } from "@/components/page-header";
 import { getWeeklyLearnings } from "@/lib/db";
+import { PHASE_2_LIVE } from "@/lib/phases";
 
 const dayFormat = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -29,9 +30,15 @@ export default function LearningsPage() {
         title="Learnings"
         description="What the agent learned from each week of results and how it changed the next shortlist."
       />
-      <Suspense fallback={<LoadingCard className="h-80" />}>
-        <LearningsList />
-      </Suspense>
+      {PHASE_2_LIVE ? (
+        <Suspense fallback={<LoadingCard className="h-80" />}>
+          <LearningsList />
+        </Suspense>
+      ) : (
+        <EmptyState icon={Clock} title="Coming in Phase 2">
+          Weekly learnings need real performance data first. They come after YouTube metrics land in Phase 2.
+        </EmptyState>
+      )}
     </>
   );
 }

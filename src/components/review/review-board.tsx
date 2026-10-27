@@ -23,15 +23,13 @@ export function ReviewBoard({
   weeks,
   batches,
   slots,
-  schedulingLive,
 }: {
   clips: CandidateClip[];
   /** Newest first; the first is the current week. */
   weeks: WeekOption[];
   batches: OpusProjectOption[];
-  /** Posting times for the picks, in order. */
+  /** Free posting times, soonest first, for the picks not scheduled yet. */
   slots: string[];
-  schedulingLive: boolean;
 }) {
   const currentWeekId = weeks[0]?.id ?? null;
   const [query, setQuery] = useState("");
@@ -47,8 +45,11 @@ export function ReviewBoard({
   const picks = clips.filter((c) => c.picked && c.weekId === currentWeekId && currentWeekId);
   const pickCount = picks.length;
   const overTarget = pickCount > WEEKLY_APPROVAL_TARGET;
-  const canSchedule = pickCount === WEEKLY_APPROVAL_TARGET;
-  const pickable = (clip: CandidateClip) => Boolean(currentWeekId && clip.weekId === currentWeekId && clip.scores && !clip.cut);
+  const unscheduledCount = picks.filter((c) => !c.scheduledFor).length;
+  const canSchedule = pickCount === WEEKLY_APPROVAL_TARGET && unscheduledCount > 0;
+  // Scheduled clips are locked in; cancel the post on the Schedule page to change them.
+  const pickable = (clip: CandidateClip) =>
+    Boolean(currentWeekId && clip.weekId === currentWeekId && clip.scores && !clip.cut && !clip.scheduledFor);
 
   function toggle(clip: CandidateClip) {
     if (!currentWeekId) return;
@@ -73,7 +74,14 @@ export function ReviewBoard({
 
   let hint = `Select ${WEEKLY_APPROVAL_TARGET - pickCount} more to schedule the week.`;
   if (overTarget) hint = `Unselect ${pickCount - WEEKLY_APPROVAL_TARGET} to schedule the week.`;
-  if (canSchedule) hint = "One per day at 12pm Eastern on YouTube, starting tomorrow.";
+  if (pickCount === WEEKLY_APPROVAL_TARGET) {
+    hint =
+      unscheduledCount === 0
+        ? "All 7 are scheduled. See the Schedule page."
+        : unscheduledCount < pickCount
+          ? `${pickCount - unscheduledCount} scheduled, ${unscheduledCount} to go.`
+          : "One per day at 12pm Eastern on YouTube, starting tomorrow.";
+  }
   if (!currentWeekId) hint = "Start a week above. Its top 7 clips are picked automatically after scoring.";
 
   const card = (clip: CandidateClip) => (
@@ -177,7 +185,7 @@ export function ReviewBoard({
       )}
 
       {scheduling && currentWeekId && (
-        <ScheduleDialog weekId={currentWeekId} picks={picks} slots={slots} live={schedulingLive} onClose={() => setScheduling(false)} />
+        <ScheduleDialog weekId={currentWeekId} picks={picks} slots={slots} onClose={() => setScheduling(false)} />
       )}
     </>
   );

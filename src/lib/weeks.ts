@@ -4,7 +4,15 @@ import { rubricCategories } from "@/lib/clips";
 import { runScoring, type ScoringRun } from "@/lib/clip-scoring";
 import type { Db } from "@/lib/db/client";
 import { isIntegrationConnected, isOpusMockForced } from "@/lib/integrations/config";
-import { findBrandTemplateId, getProjectStage, listClips, listSocialAccounts, schedulePost, submitVideo } from "@/lib/integrations/opus";
+import {
+  cancelScheduledPost,
+  findBrandTemplateId,
+  getProjectStage,
+  listClips,
+  listSocialAccounts,
+  schedulePost,
+  submitVideo,
+} from "@/lib/integrations/opus";
 import { getVideoInfo, normalizeYouTubeUrl } from "@/lib/integrations/youtube";
 import { saveOpusClips } from "@/lib/opus-sync";
 
@@ -196,95 +204,150 @@ export function postingSlots(count: number, now = new Date()) {
   return Array.from({ length: count }, (_, i) => noonEastern(new Date(Date.UTC(y, m - 1, d + 1 + i)).toISOString().slice(0, 10)));
 }
 
-/** Only this YouTube account may be posted to. Anything named like Ace Your Interviews is refused. */
+/** The only account clips may be posted to: the Exponent YouTube channel. */
+const ALLOWED_ACCOUNT_NAME = () => process.env.OPUSCLIP_YOUTUBE_ACCOUNT_NAME?.trim() || "Exponent";
 const FORBIDDEN_ACCOUNT = /ace\s*your\s*interviews/i;
 
-/** OPUSCLIP_SCHEDULING_LIVE=true lets confirming actually schedule posts through Opus. */
-export function schedulingLive() {
-  return process.env.OPUSCLIP_SCHEDULING_LIVE?.trim() === "true";
-}
-
-/** Finds the Opus account for the Exponent YouTube channel and checks it's safe to post to. */
-async function youtubePostAccount() {
-  // Mock mode only has mock accounts, so it matches by name instead of the real ID.
-  const configured = isIntegrationConnected("opus") ? process.env.OPUSCLIP_YOUTUBE_POST_ACCOUNT_ID?.trim() : undefined;
+/**
+ * Looks up the Exponent YouTube account in Opus's connected social accounts. Refuses
+ * anything else: no match, more than one match, a different configured ID, or any
+ * account named like Ace Your Interviews.
+ */
+export async function youtubePostAccount() {
+  const name = ALLOWED_ACCOUNT_NAME();
+  if (FORBIDDEN_ACCOUNT.test(name)) throw new Error(`Refusing to post to "${name}". Only the Exponent YouTube account is allowed.`);
   const accounts = await listSocialAccounts();
-  const account = configured
-    ? accounts.find((a) => a.postAccountId === configured)
-    : accounts.find((a) => a.platform === "YOUTUBE" && /exponent/i.test(a.name));
-  if (!account) throw new Error("The Exponent YouTube account isn't connected in Opus. Set OPUSCLIP_YOUTUBE_POST_ACCOUNT_ID.");
-  if (account.platform !== "YOUTUBE") throw new Error(`Opus account "${account.name}" isn't a YouTube account.`);
-  if (FORBIDDEN_ACCOUNT.test(account.name)) throw new Error(`Refusing to post to "${account.name}". Use the Exponent YouTube account.`);
+  const matches = accounts.filter((a) => a.platform === "YOUTUBE" && a.name.trim().toLowerCase() === name.toLowerCase());
+  if (matches.length === 0) throw new Error(`No YouTube account named "${name}" is connected in Opus.`);
+  if (matches.length > 1) throw new Error(`More than one YouTube account named "${name}" is connected in Opus. Set OPUSCLIP_YOUTUBE_POST_ACCOUNT_ID.`);
+  const account = matches[0];
+  // A configured ID must agree with the lookup. Mock mode only has mock IDs, so it skips this.
+  const configured = isIntegrationConnected("opus") ? process.env.OPUSCLIP_YOUTUBE_POST_ACCOUNT_ID?.trim() : undefined;
+  if (configured && configured !== account.postAccountId) {
+    const other = accounts.find((a) => a.postAccountId === configured);
+    throw new Error(`OPUSCLIP_YOUTUBE_POST_ACCOUNT_ID points to "${other?.name ?? configured}", not the "${name}" YouTube account. Refusing to schedule.`);
+  }
+  if (FORBIDDEN_ACCOUNT.test(account.name)) throw new Error(`Refusing to post to "${account.name}".`);
   return account;
 }
 
-export type SchedulePlanItem = { clipId: string; title: string; description: string; publishAt: string };
+/** New York dates ("YYYY-MM-DD") that already have a post scheduled. */
+async function bookedDates(db: Db) {
+  const { data, error } = await db.from("posts").select("scheduled_for").eq("platform", "youtube").eq("status", "scheduled").gte("scheduled_for", new Date().toISOString());
+  if (error) throw new Error(`Failed to load scheduled posts: ${error.message}`);
+  return new Set(data.flatMap((p) => (p.scheduled_for ? [easternDate(new Date(p.scheduled_for))] : [])));
+}
 
 /**
- * Checks the week's picks and the edited titles, then schedules them through Opus one per
- * day at noon Eastern. Without OPUSCLIP_SCHEDULING_LIVE=true nothing is sent: it returns
- * the plan as a dry run. Edited titles are saved either way.
+ * The next free noon-Eastern slots starting tomorrow, skipping days that already have a
+ * post, so a test post and the rest of the week never land on the same day.
  */
-export async function scheduleWeek(db: Db, weekId: string, items: { clipId: string; title: string }[]) {
+export async function freeSlots(db: Db, count: number, now = new Date()) {
+  const booked = await bookedDates(db);
+  const slots: Date[] = [];
+  for (let day = 1; slots.length < count && day <= count + booked.size + 1; day++) {
+    const [y, m, d] = easternDate(now).split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d + day)).toISOString().slice(0, 10);
+    if (!booked.has(date)) slots.push(noonEastern(date));
+  }
+  return slots;
+}
+
+export type ScheduleItem = { clipId: string; title: string; description: string };
+export type ScheduledPost = { clipId: string; title: string; publishAt: string; scheduleId: string };
+
+/**
+ * Schedules the week's unscheduled picks on the Exponent YouTube channel through Opus,
+ * with the titles and descriptions from the preview. items must be exactly the
+ * unscheduled picks, in the preview's order. With limit 1 only the first is scheduled
+ * (the "Test with 1 clip" option). Only call this after the user confirms.
+ */
+export async function scheduleWeek(db: Db, weekId: string, items: ScheduleItem[], { limit }: { limit?: number } = {}) {
   const { data: picks, error } = await db
     .from("clips")
-    .select("id, opus_clip_id, title, youtube_title, youtube_description, score_total, status, source_videos!inner (week_id)")
+    .select("id, opus_clip_id, status, source_videos!inner (week_id)")
     .eq("source_videos.week_id", weekId)
     .eq("picked", true)
-    .eq("status", "candidate");
+    .in("status", ["candidate", "scheduled"]);
   if (error) throw new Error(`Failed to load picks: ${error.message}`);
   if (picks.length !== PICKS_PER_WEEK) throw new Error(`Pick exactly ${PICKS_PER_WEEK} clips to schedule; ${picks.length} are picked.`);
-  // The preview's order decides the dates, so it must be exactly this week's picks.
-  const byId = new Map(picks.map((p) => [p.id, p]));
-  if (items.length !== picks.length || new Set(items.map((i) => i.clipId)).size !== items.length || items.some((i) => !byId.has(i.clipId))) {
+
+  const unscheduled = new Map(picks.filter((p) => p.status === "candidate").map((p) => [p.id, p]));
+  if (unscheduled.size === 0) throw new Error("Every pick is already scheduled.");
+  if (items.length !== unscheduled.size || new Set(items.map((i) => i.clipId)).size !== items.length || items.some((i) => !unscheduled.has(i.clipId))) {
     throw new Error("The picks changed since the preview opened. Close it and try again.");
   }
 
   const issues: string[] = [];
-  const slots = postingSlots(items.length);
-  const plan: (SchedulePlanItem & { opusClipId: string | null })[] = items.map((item, i) => {
-    const clip = byId.get(item.clipId)!;
-    const title = (item.title ?? clip.youtube_title ?? clip.title).trim();
+  const cleaned = items.map((item, i) => {
+    const title = item.title.trim();
+    const description = item.description.trim();
     if (!title) issues.push(`Clip ${i + 1} needs a title`);
     if (title.length > CAPTION_RULES.youtube.titleMaxChars) issues.push(`"${title}" is ${title.length} characters; keep it under 60`);
-    issues.push(...checkViewerText(`"${title}"`, title));
-    return { clipId: clip.id, opusClipId: clip.opus_clip_id, title, description: clip.youtube_description ?? "", publishAt: slots[i].toISOString() };
+    if (!description) issues.push(`"${title}" needs a description`);
+    issues.push(...checkViewerText(`"${title}"`, title), ...checkViewerText(`Description for "${title}"`, description));
+    return { ...item, title, description };
   });
   if (issues.length) throw new Error(issues.join(". "));
 
-  for (const item of plan) {
-    const { error: titleError } = await db.from("clips").update({ youtube_title: item.title }).eq("id", item.clipId);
-    if (titleError) throw new Error(`Failed to save a title: ${titleError.message}`);
+  // Save the preview's text first, so edits are kept even if scheduling fails.
+  for (const item of cleaned) {
+    const { error: saveError } = await db.from("clips").update({ youtube_title: item.title, youtube_description: item.description }).eq("id", item.clipId);
+    if (saveError) throw new Error(`Failed to save "${item.title}": ${saveError.message}`);
   }
 
   const account = await youtubePostAccount();
-  if (!schedulingLive()) return { live: false as const, account: account.name, plan, scheduled: 0 };
-
-  let scheduled = 0;
-  for (const item of plan) {
-    if (!item.opusClipId) throw new Error(`"${item.title}" didn't come from Opus, so it can't be scheduled there.`);
-    const [projectId, clipId] = item.opusClipId.split(".");
+  const toSchedule = cleaned.slice(0, limit ?? cleaned.length);
+  const slots = await freeSlots(db, toSchedule.length);
+  const scheduled: ScheduledPost[] = [];
+  for (const [i, item] of toSchedule.entries()) {
+    const opusClipId = unscheduled.get(item.clipId)!.opus_clip_id;
+    if (!opusClipId) throw new Error(`"${item.title}" didn't come from Opus, so it can't be scheduled there.`);
+    const [projectId, clipId] = opusClipId.split(".");
+    const publishAt = slots[i];
     const { scheduleId } = await schedulePost({
       projectId,
       clipId,
       postAccountId: account.postAccountId,
-      publishAt: new Date(item.publishAt),
+      publishAt,
       title: item.title,
       description: item.description,
       privacy: "public",
     });
     // Record each post as soon as Opus accepts it, so a later failure doesn't lose track.
-    const { error: postError } = await db.from("posts").insert({
-      clip_id: item.clipId,
-      platform: "youtube",
-      platform_post_id: scheduleId,
-      scheduled_for: item.publishAt,
-      caption: item.description,
-      status: "scheduled",
-    });
-    if (postError) throw new Error(`Scheduled "${item.title}" in Opus (${scheduleId}) but couldn't save it: ${postError.message}`);
-    await db.from("clips").update({ status: "scheduled" }).eq("id", item.clipId);
-    scheduled++;
+    // Upsert, since a clip whose post was canceled already has a row.
+    const { error: postError } = await db.from("posts").upsert(
+      {
+        clip_id: item.clipId,
+        platform: "youtube",
+        platform_post_id: scheduleId,
+        scheduled_for: publishAt.toISOString(),
+        posted_at: null,
+        caption: item.description,
+        status: "scheduled",
+      },
+      { onConflict: "clip_id,platform" },
+    );
+    if (postError) throw new Error(`Scheduled "${item.title}" in Opus (${scheduleId}) but couldn't save it: ${postError.message}. Cancel it in OpusClip.`);
+    const { error: clipError } = await db.from("clips").update({ status: "scheduled" }).eq("id", item.clipId);
+    if (clipError) throw new Error(`Scheduled "${item.title}" but couldn't mark the clip scheduled: ${clipError.message}`);
+    scheduled.push({ clipId: item.clipId, title: item.title, publishAt: publishAt.toISOString(), scheduleId });
   }
-  return { live: true as const, account: account.name, plan, scheduled };
+  return { account: account.name, scheduled, remaining: unscheduled.size - scheduled.length };
+}
+
+/** Cancels a scheduled post in Opus, then marks it canceled and puts its clip back in the picks. */
+export async function cancelPost(db: Db, postId: string) {
+  const { data: post, error } = await db.from("posts").select("id, clip_id, platform_post_id, status, scheduled_for").eq("id", postId).maybeSingle();
+  if (error) throw new Error(`Failed to load the post: ${error.message}`);
+  if (!post) throw new Error("That post doesn't exist.");
+  if (post.status !== "scheduled") throw new Error(`That post is already ${post.status}.`);
+  if (post.scheduled_for && new Date(post.scheduled_for).getTime() <= Date.now()) throw new Error("That post's publish time has passed, so it can't be canceled.");
+  if (!post.platform_post_id) throw new Error("That post has no OpusClip schedule ID to cancel.");
+
+  await cancelScheduledPost(post.platform_post_id);
+  const { error: postError } = await db.from("posts").update({ status: "canceled" }).eq("id", post.id);
+  if (postError) throw new Error(`Canceled in OpusClip but couldn't save it: ${postError.message}`);
+  const { error: clipError } = await db.from("clips").update({ status: "candidate" }).eq("id", post.clip_id).eq("status", "scheduled");
+  if (clipError) throw new Error(`Canceled, but couldn't put the clip back in the picks: ${clipError.message}`);
 }

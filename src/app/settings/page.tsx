@@ -1,14 +1,18 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/page-header";
-import { integrations, integrationStatus } from "@/lib/integrations/config";
+import { integrations as allIntegrations, integrationStatus } from "@/lib/integrations/config";
+import { PHASE_2_LIVE } from "@/lib/phases";
+
+// Integrations for later phases stay configured in code but are hidden until their phase.
+const integrations = allIntegrations.filter((i) => i.phase === 1 || (i.phase === 2 && PHASE_2_LIVE));
 
 export default function SettingsPage() {
   return (
     <>
       <PageHeader
         title="Settings"
-        description="Integrations are configured with environment variables in .env.local. Anything not connected uses mock data."
+        description="Integrations are configured with environment variables in .env.local. Anything not connected uses mock data. YouTube metrics come in Phase 2, Instagram and TikTok in Phase 3."
       />
       <Suspense fallback={<IntegrationsSkeleton />}>
         <IntegrationsList />

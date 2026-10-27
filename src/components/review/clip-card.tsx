@@ -11,6 +11,8 @@ import {
   type CandidateClip,
 } from "@/lib/clips";
 
+const scheduledDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
+
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -84,8 +86,13 @@ export function ClipCard({
         {!playing && (
           <span className="pointer-events-none absolute left-2 top-2 flex gap-1">
             <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">{formatLabels[clip.format]}</span>
-            {clip.picked && (
+            {clip.picked && !clip.scheduledFor && (
               <span className="rounded-full bg-primary-tint px-2 py-0.5 text-xs font-medium text-primary">Top 7</span>
+            )}
+            {clip.scheduledFor && (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                Scheduled {scheduledDate.format(new Date(clip.scheduledFor))}
+              </span>
             )}
             {clip.cut && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Cut</span>}
           </span>

@@ -3,12 +3,16 @@ import { CalendarClock } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { LoadingCard } from "@/components/loading-card";
 import { PageHeader } from "@/components/page-header";
+import { CancelPostButton } from "@/components/schedule/cancel-post-button";
 import { getUpcomingPosts } from "@/lib/db";
 
 export default function SchedulePage() {
   return (
     <>
-      <PageHeader title="Schedule" description="Posts scheduled on YouTube through OpusClip, soonest first." />
+      <PageHeader
+        title="Schedule"
+        description="Upcoming posts on the Exponent YouTube channel through OpusClip, soonest first. Cancel removes a post from OpusClip too."
+      />
       <Suspense fallback={<LoadingCard className="h-64" />}>
         <UpcomingPosts />
       </Suspense>
@@ -39,9 +43,12 @@ async function UpcomingPosts() {
     <section className="rounded-card border border-line bg-surface">
       <ol>
         {posts.map((post) => (
-          <li key={post.id} className="flex flex-col gap-1 border-b border-line px-6 py-4 last:border-0 sm:flex-row sm:items-center sm:justify-between">
-            <span className="font-medium text-heading">{post.clipTitle}</span>
-            <span className="shrink-0 text-sm text-muted">YouTube, {slotFormat.format(new Date(post.scheduledFor))}</span>
+          <li key={post.id} className="flex flex-col gap-3 border-b border-line px-6 py-4 last:border-0 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-medium text-heading">{post.clipTitle}</p>
+              <p className="text-sm text-muted">YouTube, {slotFormat.format(new Date(post.scheduledFor))}</p>
+            </div>
+            <CancelPostButton postId={post.id} title={post.clipTitle} />
           </li>
         ))}
       </ol>

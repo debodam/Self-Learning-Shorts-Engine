@@ -4,15 +4,9 @@
 
 Aced Shorts Engine V2. An internal dashboard plus agent that turns Aced's long-form YouTube videos into Shorts for YouTube, TikTok, and Instagram using the OpusClip API. A Claude agent scores clips, writes titles and captions, schedules approved clips, pulls performance metrics from all three platforms, and learns weekly from results using a RAG over past clips.
 
-## MVP scope
+## Scope
 
-The MVP is YouTube only. Instagram and TikTok move to V2.
-
-- Metrics pipelines pull from YouTube only.
-- The performance page shows only YouTube columns.
-- The review page shows only YouTube predicted performance.
-- Scheduling and publishing target YouTube only.
-- Keep the Instagram and TikTok integration stubs in the code, but hide them from the UI and the settings page until V2.
+MVP 1 (the Generator) is the current focus. Build for it, and keep later phases out of the UI until their phase starts: their code and integration stubs can stay, but pages show "Coming in Phase 2" and settings only list what MVP 1 uses.
 
 ## Users
 
@@ -25,8 +19,8 @@ Single-user auth for now. More teammates may be added later, so don't hardcode a
 - Claude API
 - OpusClip REST API (https://api.opus.pro)
 - YouTube Data + Analytics APIs
-- Instagram Graph API (V2, stub only in MVP)
-- TikTok API (V2, stub only in MVP)
+- Instagram Graph API (Phase 3, stub only for now)
+- TikTok API (Phase 3, stub only for now)
 - GitHub Actions
 - Vercel
 
@@ -49,7 +43,7 @@ Match Aced's product UI. Light theme, light gray page background, white sidebar,
 - Every person speaking must be fully visible. Split layout for 2+ people.
 - Mock interview clips open on the moment of tension, then cut back to the answer.
 - Rubric, 1 to 5 each: Hook, Tension, Standalone, Payoff, Loopability. Cut anything under 3 on Hook or Standalone.
-- Weekly flow: shortlist 10 clips, approve 7, one per day at 12pm Eastern on YouTube (all three platforms from V2).
+- Weekly flow: the top 7 clips across the week's 2 videos, one per day at 12pm Eastern on YouTube (Instagram and TikTok in Phase 3). See Weekly flow below.
 
 ## Weekly flow
 
@@ -65,9 +59,7 @@ Submitting to Opus spends credits and scheduling posts publicly, so both always 
 
 ## Phases
 
-1. Data layer, metrics pipelines, performance page
-2. Opus integration, agent scoring, review and approve page, scheduling
-3. Embeddings, similar-clip retrieval, weekly learning report
-4. Competitors, comments, back catalog, second channel
-
-Phases 1 to 3 are YouTube only. Instagram and TikTok metrics, predictions, and scheduling come in V2.
+1. **MVP 1: Generator (current focus).** Submit 2 YouTube links, OpusClip clips them, the agent scores them, the top 7 are highlighted, and they're scheduled to the Exponent YouTube channel. See Weekly flow.
+2. **Phase 2:** YouTube metrics, V1 data import, Vercel deploy, login, GitHub Actions routines.
+3. **Phase 3:** Instagram and TikTok.
+4. **Phase 4:** RAG, similar-clip retrieval, weekly learnings.

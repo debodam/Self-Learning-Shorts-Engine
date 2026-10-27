@@ -5,42 +5,50 @@ export type Integration = {
   name: string;
   description: string;
   envVars: string[];
+  /** The roadmap phase that uses it (see CLAUDE.md). Settings only lists live phases. */
+  phase: 1 | 2 | 3;
 };
 
 // Keep in sync with .env.example.
 export const integrations: Integration[] = [
   {
     id: "supabase",
+    phase: 1,
     name: "Supabase",
     description: "Postgres and pgvector storage for clips, metrics, and embeddings.",
     envVars: ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
   },
   {
     id: "claude",
+    phase: 1,
     name: "Claude",
     description: "Scores clips, writes titles and captions, and runs the weekly learning report.",
     envVars: ["ANTHROPIC_API_KEY"],
   },
   {
     id: "opus",
+    phase: 1,
     name: "OpusClip",
     description: "Cuts long-form videos into candidate clips and handles reframing.",
     envVars: ["OPUSCLIP_API_KEY"],
   },
   {
     id: "youtube",
+    phase: 2,
     name: "YouTube",
     description: "Data and Analytics APIs for source videos, Shorts posting, and metrics.",
     envVars: ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN", "YOUTUBE_CHANNEL_ID"],
   },
   {
     id: "instagram",
+    phase: 3,
     name: "Instagram",
     description: "Graph API for Reels posting and metrics.",
     envVars: ["INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_BUSINESS_ACCOUNT_ID"],
   },
   {
     id: "tiktok",
+    phase: 3,
     name: "TikTok",
     description: "Content Posting and Display APIs for posting and metrics.",
     envVars: ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TIKTOK_ACCESS_TOKEN"],
