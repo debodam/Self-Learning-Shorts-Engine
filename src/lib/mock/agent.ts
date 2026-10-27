@@ -22,7 +22,7 @@ export function mockClipScore(clip: ClipForAgent): ClipScore {
     total: Object.values(scores).reduce((a, b) => a + b, 0),
     cut: shouldCut(scores),
     hookType: clip.format === "mock" ? "interviewer_pushback" : "insider_advice",
-    predictedViews: known?.predictedViews ?? { youtube: 25000, tiktok: 32000, instagram: 12000 },
+    vision: null,
     suggestedTitle: shortTitle(clip.title),
     youtube: { title: shortTitle(clip.title), description: `A real moment from "${clip.sourceVideoTitle}".` },
     framing: { speakerCount: twoSpeakers ? 2 : 1, layout: twoSpeakers ? "split" : "single", openOnLine: firstLine },

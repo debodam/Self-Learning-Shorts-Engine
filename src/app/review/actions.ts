@@ -28,7 +28,7 @@ export async function scoreClips(all = false): Promise<ScoreClipsResult> {
     const failed = run.failed.length ? ` ${run.failed.length} failed: ${run.failed.map((f) => `"${f.title}" (${f.error})`).join(", ")}.` : "";
     return {
       ok: run.failed.length === 0,
-      message: `${all ? "Re-scored" : "Scored"} ${run.scored} ${run.scored === 1 ? "clip" : "clips"}: ${run.scored - run.cut} kept, ${run.cut} cut. Used ${tokens} on ${run.model}, about ${cost}.${failed}`,
+      message: `${all ? "Re-scored" : "Scored"} ${run.scored} ${run.scored === 1 ? "clip" : "clips"}: ${run.scored - run.cut} kept, ${run.cut} cut (${run.noSpeaker} with no speaker on screen). Used ${tokens} on ${run.model}, about ${cost}.${failed}`,
     };
   } catch (error) {
     console.error("Scoring failed:", error);

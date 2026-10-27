@@ -85,6 +85,11 @@ export type Database = {
           transcript: string | null
           youtube_description: string | null
           youtube_title: string | null
+          cut_reason: string | null
+          face_frames: number | null
+          frames_checked: number | null
+          people_count: number | null
+          text_readable: boolean | null
         }
         Insert: {
           created_at?: string
@@ -113,6 +118,11 @@ export type Database = {
           transcript?: string | null
           youtube_description?: string | null
           youtube_title?: string | null
+          cut_reason?: string | null
+          face_frames?: number | null
+          frames_checked?: number | null
+          people_count?: number | null
+          text_readable?: boolean | null
         }
         Update: {
           created_at?: string
@@ -141,6 +151,11 @@ export type Database = {
           transcript?: string | null
           youtube_description?: string | null
           youtube_title?: string | null
+          cut_reason?: string | null
+          face_frames?: number | null
+          frames_checked?: number | null
+          people_count?: number | null
+          text_readable?: boolean | null
         }
         Relationships: [
           {

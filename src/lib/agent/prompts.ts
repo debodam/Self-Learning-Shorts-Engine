@@ -27,7 +27,9 @@ Categories:
 - Payoff: does the viewer leave with a takeaway they can use? A clear, specific insight is 3 to 4. 5 lands a sharp lesson or turn. Below 3 when it cuts off before the point or never makes one.
 - Loopability: does the ending make the viewer want to rewatch? 3 ends cleanly on the point. 4 to 5 ends on a line that recontextualizes the start. Below 3 when it ends abruptly or on an outro.
 
-Clips under ${MIN_KEEP_SCORE} on ${CUT_LABELS} get cut. Only score ${CUT_LABELS} below ${MIN_KEEP_SCORE} for a concrete reason like the ones above, and name that reason in your reasoning.`;
+Clips under ${MIN_KEEP_SCORE} on ${CUT_LABELS} get cut. Only score ${CUT_LABELS} below ${MIN_KEEP_SCORE} for a concrete reason like the ones above, and name that reason in your reasoning.
+
+Use the full 1 to 5 range and spread scores out. Decide each category on its own evidence rather than starting from a default: a clip with a sharp opening but a weak ending should show that difference. Most clips should not end up with identical scores, and a run of 3s across every category means you haven't looked closely enough.`;
 
 // Short, made-up examples with the scores they should get, so scores stay calibrated.
 // Keep them in sync with the rubric when it changes.
@@ -59,17 +61,24 @@ const TITLE_RULES = `Title rules:
 - No clickbait, no questions meant to bait a click, no emoji.
 - "Part 1", "Part 2" and similar are intentional for multi-part clips. Keep them, and don't count them against the clip.`;
 
+const VISUAL_CHECKS = `Frames: you'll see three still frames taken about 10%, 50%, and 90% of the way through the clip, in that order. For each frame, report:
+- face_visible: true only when a real person's face is clearly visible and large enough to read their expression on a phone. A screen share, slides, a document, or a tiny webcam bubble in a corner is false.
+- people: how many people are visible in that frame.
+Then report text_readable: whether the important on-screen text (slides, documents, code, captions aside) would be readable on a phone screen. Answer true when there is no such text.
+
+Aced Shorts need a person on camera. A clip that is mostly a screen share or slides without a visible speaker is a weak Short: score Hook and Standalone low and say so. When frames aren't available, judge from the transcript and report every frame as not visible.`;
+
 export const SCORING_SYSTEM_PROMPT = `${ABOUT_ACED}
 
-Your job here is to judge one candidate clip cut from a long-form video and decide whether it should make the weekly shortlist. You'll get the clip's transcript and details, and sometimes past clips with similar content and how they performed. Use those past results to calibrate: if similar clips underperformed, look for the reason and score accordingly.
+Your job here is to judge one candidate clip cut from a long-form video and decide whether it should make the weekly shortlist. You'll get the clip's transcript and details, frames from the clip when they're available, and sometimes past clips with similar content and how they performed. Use those past results to calibrate: if similar clips underperformed, look for the reason and score accordingly.
+
+${VISUAL_CHECKS}
 
 ${RUBRIC}
 
 ${CALIBRATION_EXAMPLES}
 
 Also classify the hook as one of: ${HOOK_TYPES.join(", ")}.
-
-Predict views in the first 7 days on each of YouTube, TikTok, and Instagram if the clip is posted. Anchor on the past clips you're given: start from what clips with a similar format, hook type, and score got, and adjust for how this clip compares. With no past clips, keep estimates modest. Predictions are compared with actual results each week, so aim for accuracy, not optimism.
 
 ${FRAMING}
 
@@ -143,8 +152,9 @@ export function buildScoringRepairMessage(issues: string[]) {
   return `That breaks these rules:\n${issues.map((i) => `- ${i}`).join("\n")}\n\nScore the clip again with every rule met. Keep the scores unless the fix changes your judgment.`;
 }
 
-export function buildScoringMessage(clip: ClipForAgent, similarClips: SimilarClip[] = []) {
-  let message = `Score this clip.\n\n${clipDetails(clip)}`;
+export function buildScoringMessage(clip: ClipForAgent, similarClips: SimilarClip[] = [], frameCount = 0) {
+  const frames = frameCount ? `The ${frameCount} frames above are from this clip.` : "No frames are available for this clip.";
+  let message = `Score this clip. ${frames}\n\n${clipDetails(clip)}`;
   if (similarClips.length > 0) {
     const rows = similarClips.map((s) => {
       const views = (["youtube", "tiktok", "instagram"] as const)
@@ -197,4 +207,51 @@ export function buildLearningsMessage(weekStart: string, clips: WeekClipResult[]
     return `- "${c.title}" (${c.format}, hook: ${c.hookType ?? "unknown"}, score ${c.scoreTotal ?? "n/a"}/25)\n${platforms.join("\n")}`;
   });
   return `Week starting ${weekStart}. ${clips.length} clips posted.\n\n${rows.join("\n")}`;
+}
+
+// Batch calibration -------------------------------------------------------------
+
+export const BATCH_CALIBRATION_SYSTEM_PROMPT = `${ABOUT_ACED}
+
+Each clip from one long-form video has already been scored on its own. Your job here is to compare them side by side and adjust the scores so the batch is ranked well: the best clips clearly score higher than average ones, and weak clips score lower. Clips scored one at a time tend to bunch up in the middle; spread them out.
+
+${RUBRIC}
+
+How to adjust:
+- Read every clip before changing anything. Compare clips that have the same scores and decide which is actually better.
+- Move a score only when the comparison justifies it, and keep the per-category reasoning honest: a better opening raises Hook, not Payoff.
+- Most clips in a batch should not end up with identical scores. The strongest one or two clips in a batch of ten or more should usually total several points above the median.
+- Each clip lists what its frames showed. A clip without a visible speaker is weak for Aced; don't raise it above clips with a person on camera.
+
+For every clip, return its key, its working title copied exactly, the final five scores, and a reason of one short sentence of at most 25 words that says why it ranks where it does in this batch.
+
+${BRAND_AND_STYLE}`;
+
+export type BatchClipForAgent = {
+  key: string;
+  title: string;
+  format: ClipFormat;
+  durationSeconds: number | null;
+  transcript: string;
+  scores: Record<"hook" | "tension" | "standalone" | "payoff" | "loopability", number>;
+  reasoning: string;
+  /** e.g. "face in 3 of 3 frames, 2 people, text readable" or "frames not checked". */
+  visual: string;
+};
+
+export function buildBatchCalibrationMessage(sourceVideoTitle: string, clips: BatchClipForAgent[]) {
+  const rows = clips.map((c) => {
+    const s = c.scores;
+    return [
+      `<clip key="${c.key}">`,
+      `Working title: ${c.title}`,
+      `Format: ${c.format === "mock" ? "mock interview" : "conversational"}${c.durationSeconds ? `, ${c.durationSeconds} seconds` : ""}`,
+      `Frames: ${c.visual}`,
+      `First-pass scores: Hook ${s.hook}, Tension ${s.tension}, Standalone ${s.standalone}, Payoff ${s.payoff}, Loopability ${s.loopability}`,
+      `First-pass reason: ${c.reasoning}`,
+      `<transcript>\n${c.transcript}\n</transcript>`,
+      `</clip>`,
+    ].join("\n");
+  });
+  return `Source video: ${sourceVideoTitle}\n${clips.length} clips.\n\n${rows.join("\n\n")}`;
 }

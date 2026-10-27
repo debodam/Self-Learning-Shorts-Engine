@@ -11,11 +11,6 @@ import {
   type CandidateClip,
 } from "@/lib/clips";
 
-const compactNumber = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -121,8 +116,14 @@ export function ClipCard({
           )}
         </div>
 
-        {(clip.suggestedTitle || clip.reason) && (
+        {(clip.suggestedTitle || clip.reason || clip.cutReason) && (
           <dl className="space-y-2 rounded-md bg-page px-3 py-2.5 text-sm">
+            {clip.cutReason && (
+              <div>
+                <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Cut</dt>
+                <dd className="font-medium text-red-700">{clip.cutReason}</dd>
+              </div>
+            )}
             {clip.suggestedTitle && (
               <div>
                 <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">Suggested title</dt>
@@ -136,6 +137,16 @@ export function ClipCard({
               </div>
             )}
           </dl>
+        )}
+
+        {clip.vision && (
+          <p className="text-xs text-muted">
+            Face in {clip.vision.faceFrames} of {clip.vision.framesChecked} frames
+            {" \u00b7 "}
+            {clip.vision.peopleCount === 1 ? "1 person" : `${clip.vision.peopleCount} people`}
+            {" \u00b7 "}
+            {clip.vision.textReadable ? "text readable" : "text too small on a phone"}
+          </p>
         )}
 
         <div>
@@ -165,15 +176,7 @@ export function ClipCard({
           )}
         </div>
 
-        {/* MVP is YouTube only, so only the YouTube prediction is shown. */}
-        <div className="flex items-baseline justify-between">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted">
-            Predicted YouTube views, 7 days
-          </span>
-          <span className={`text-sm ${clip.predictedViews ? "font-semibold text-heading" : "text-muted"}`}>
-            {clip.predictedViews ? compactNumber.format(clip.predictedViews.youtube) : "Not yet"}
-          </span>
-        </div>
+        {/* Predicted views are hidden until real YouTube results are in Supabase (Phase 3). */}
 
         {onToggle && (
           <label className="mt-auto flex cursor-pointer items-center justify-between border-t border-line pt-3">

@@ -72,7 +72,7 @@ async function importFinishedProjects({ db, log }: JobContext) {
 async function scoreUnscored({ db, log }: JobContext) {
   if (db) {
     const run = await runScoring(db, { log });
-    log(`Scored ${run.scored}: ${run.scored - run.cut} kept as candidates, ${run.cut} cut, ${run.failed.length} failed.`);
+    log(`Scored ${run.scored}: ${run.scored - run.cut} kept as candidates, ${run.cut} cut (${run.noSpeaker} no speaker), ${run.failed.length} failed.`);
     return;
   }
 

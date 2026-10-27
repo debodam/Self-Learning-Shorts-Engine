@@ -1,6 +1,5 @@
 import "server-only";
 import { connection } from "next/server";
-import { shouldCut } from "@/lib/agent/rules";
 import { rubricCategories, totalScore, type CandidateClip, type OpusMedia } from "@/lib/clips";
 import { getLastScoringRun } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
@@ -37,7 +36,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, opus_clip_id, title, transcript, format, duration_seconds, scored_at, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title)",
+      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title)",
     )
     // Cut clips are saved as rejected.
     .in("status", ["candidate", "rejected"])
@@ -71,7 +70,13 @@ export async function getReviewClips(): Promise<ReviewClips> {
           : null,
       reason: scores ? row.score_reasoning : null,
       suggestedTitle: scores ? row.suggested_title : null,
-      cut: scores ? shouldCut(scores) : false,
+      // The scoring run decides cuts, including hard rules like the face rule, and saves them as rejected.
+      cut: scores ? row.status === "rejected" : false,
+      cutReason: scores ? row.cut_reason : null,
+      vision:
+        scores && row.frames_checked && row.face_frames !== null
+          ? { framesChecked: row.frames_checked, faceFrames: row.face_frames, peopleCount: row.people_count ?? 0, textReadable: row.text_readable ?? true }
+          : null,
       // Composite Opus IDs are "{projectId}.{clipId}".
       batchId: row.opus_clip_id?.split(".")[0],
       transcript: row.transcript,

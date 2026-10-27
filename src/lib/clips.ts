@@ -55,8 +55,12 @@ export type CandidateClip = {
   reason?: string | null;
   /** A factual title the agent suggests. title keeps the original. */
   suggestedTitle?: string | null;
-  /** Scored under 3 on Hook or Standalone, so it can't be shortlisted. */
+  /** Cut by the rubric (under 3 on Hook or Standalone) or a hard rule, so it can't be shortlisted. */
   cut?: boolean;
+  /** Set when a hard rule cut the clip regardless of its scores, e.g. "No speaker on screen". */
+  cutReason?: string | null;
+  /** What the scorer saw in the clip's frames. Null when frames weren't checked. */
+  vision?: { framesChecked: number; faceFrames: number; peopleCount: number; textReadable: boolean } | null;
   /** One of this week's top kept clips, so it can be approved. */
   shortlisted?: boolean;
   /** The Opus project the clip came from. Missing for clips not from Opus. */

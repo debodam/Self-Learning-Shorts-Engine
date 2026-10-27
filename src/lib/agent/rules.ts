@@ -103,3 +103,10 @@ export function formatCaptions(c: PlatformCaptions) {
     instagram: [c.instagram.hook, "", ...c.instagram.context, "", c.instagram.cta, "", c.instagram.hashtags.join(" ")].join("\n"),
   };
 }
+
+/**
+ * A person must be on camera for most of the clip: a face in at least this many of the
+ * sampled frames. Fewer and the clip is cut, whatever its rubric scores.
+ */
+export const MIN_FACE_FRAMES = 2;
+export const NO_SPEAKER_REASON = "No speaker on screen";
