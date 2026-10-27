@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { ExternalLink, Play } from "lucide-react";
 import {
   formatLabels,
@@ -17,7 +20,7 @@ function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/** Without onToggle the card is read-only, for clips that can't be approved yet. */
+/** Without onToggle the card is read-only, for clips that can't be approved. */
 export function ClipCard({
   clip,
   approved = false,
@@ -27,19 +30,9 @@ export function ClipCard({
   approved?: boolean;
   onToggle?: () => void;
 }) {
+  const [playing, setPlaying] = useState(false);
   const previewUrl = clip.opus?.previewUrl;
-  const thumbnail = (
-    <>
-      {clip.opus?.thumbnailUrl && (
-        // Signed, short-lived Opus URL, so next/image's optimizer would only cache an expiring link.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={clip.opus.thumbnailUrl} alt="" loading="lazy" className="absolute inset-0 size-full object-contain" />
-      )}
-      <span className="relative flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-        <Play className="ml-0.5 size-4" fill="currentColor" />
-      </span>
-    </>
-  );
+  const thumbnailUrl = clip.opus?.thumbnailUrl ?? undefined;
 
   return (
     <article
@@ -48,30 +41,62 @@ export function ClipCard({
       }`}
     >
       <div className="relative flex aspect-video items-center justify-center bg-gradient-to-br from-primary-tint to-page">
-        {previewUrl ? (
-          <a
-            href={previewUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Preview ${clip.title}`}
-            className="absolute inset-0 flex items-center justify-center"
-          >
-            {thumbnail}
-          </a>
+        {playing && previewUrl ? (
+          // Opus serves previews with Content-Disposition: attachment, so a link would download
+          // the file. A video element plays it inline regardless.
+          <video
+            src={previewUrl}
+            poster={thumbnailUrl}
+            controls
+            autoPlay
+            playsInline
+            className="absolute inset-0 size-full bg-heading object-contain"
+          />
         ) : (
-          thumbnail
+          <>
+            {thumbnailUrl && (
+              // Signed, short-lived Opus URL, so next/image's optimizer would only cache an expiring link.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={thumbnailUrl} alt="" loading="lazy" className="absolute inset-0 size-full object-contain" />
+            )}
+            {previewUrl ? (
+              <button
+                type="button"
+                onClick={() => setPlaying(true)}
+                aria-label={`Play ${clip.title}`}
+                className="absolute inset-0 flex items-center justify-center"
+              >
+                <span className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-110">
+                  <Play className="ml-0.5 size-4" fill="currentColor" />
+                </span>
+              </button>
+            ) : (
+              <span className="relative flex size-10 items-center justify-center rounded-full bg-primary/40 text-primary-foreground">
+                <Play className="ml-0.5 size-4" fill="currentColor" />
+              </span>
+            )}
+          </>
         )}
-        {clip.durationSeconds !== null && (
+        {!playing && clip.durationSeconds !== null && (
           <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-heading/75 px-1.5 py-0.5 text-xs font-medium text-white">
             {formatDuration(clip.durationSeconds)}
           </span>
         )}
-        <span className="pointer-events-none absolute left-2 top-2 flex gap-1">
-          <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">{formatLabels[clip.format]}</span>
-          {clip.cut && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Cut</span>}
-        </span>
-        {clip.opus?.opusScore != null && (
-          <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">
+        {!playing && (
+          <span className="pointer-events-none absolute left-2 top-2 flex gap-1">
+            <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">{formatLabels[clip.format]}</span>
+            {clip.shortlisted && (
+              <span className="rounded-full bg-primary-tint px-2 py-0.5 text-xs font-medium text-primary">Shortlist</span>
+            )}
+            {clip.cut && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Cut</span>}
+          </span>
+        )}
+        {/* Reference only: ranking and cuts use the rubric, never this. */}
+        {!playing && clip.opus?.opusScore != null && (
+          <span
+            title="OpusClip's own score, for reference. Not used for ranking or cuts."
+            className="absolute right-2 top-2 rounded-full bg-surface/90 px-2 py-0.5 text-[11px] text-muted"
+          >
             Opus {clip.opus.opusScore}
           </span>
         )}
@@ -85,7 +110,7 @@ export function ClipCard({
           </p>
           {clip.opus && (
             <a
-              href={clip.opus.projectUrl}
+              href={clip.opus.editorUrl}
               target="_blank"
               rel="noreferrer"
               className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"

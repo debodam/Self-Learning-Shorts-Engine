@@ -35,8 +35,8 @@ export const platformLabels: Record<Platform, string> = {
 export type OpusMedia = {
   thumbnailUrl: string | null;
   previewUrl: string | null;
-  projectUrl: string;
-  /** Opus's own virality score, 0 to 100. */
+  editorUrl: string;
+  /** Opus's own virality score, 0 to 100. Shown for reference only: never used to rank or cut. */
   opusScore: number | null;
 };
 
@@ -57,6 +57,11 @@ export type CandidateClip = {
   suggestedTitle?: string | null;
   /** Scored under 3 on Hook or Standalone, so it can't be shortlisted. */
   cut?: boolean;
+  /** One of this week's top kept clips, so it can be approved. */
+  shortlisted?: boolean;
+  /** The Opus project the clip came from. Missing for clips not from Opus. */
+  batchId?: string;
+  transcript?: string | null;
   /** Missing for clips that didn't come from Opus, or when Opus couldn't be reached. */
   opus?: OpusMedia;
 };

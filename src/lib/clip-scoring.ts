@@ -4,8 +4,9 @@ import type { Db } from "@/lib/db/client";
 import { addUsage, emptyUsage, estimateCostUsd, scoreClip, SCORING_MODEL, type TokenUsage } from "@/lib/integrations/claude";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 
-// Scores every unscored candidate clip with Claude and saves the results. Used by the
-// "Score clips" button and the weekly candidates job. Each run is logged to agent_runs
+// Scores candidate clips with Claude and saves the results: only unscored clips by default,
+// or every clip up for review (kept and cut) to re-score after the prompt changes. Used by
+// the Review page buttons and the weekly candidates job. Each run is logged to agent_runs
 // with its token usage and estimated cost.
 
 const PAST_CLIPS_FOR_CALIBRATION = 20;
@@ -42,7 +43,13 @@ export async function loadPastClips(db: Db): Promise<SimilarClip[]> {
   }));
 }
 
-export async function scoreUnscoredClips(db: Db, log: (line: string) => void = () => {}): Promise<ScoringRun> {
+export type ScoringOptions = {
+  /** Re-score every clip up for review, not only unscored ones. */
+  all?: boolean;
+  log?: (line: string) => void;
+};
+
+export async function runScoring(db: Db, { all = false, log = () => {} }: ScoringOptions = {}): Promise<ScoringRun> {
   const model = isIntegrationConnected("claude") ? SCORING_MODEL : "mock";
   const { data: run, error: runError } = await db.from("agent_runs").insert({ kind: "scoring", model }).select("id").single();
   if (runError) throw new Error(`Failed to start the scoring run log: ${runError.message}`);
@@ -50,15 +57,13 @@ export async function scoreUnscoredClips(db: Db, log: (line: string) => void = (
   const result: ScoringRun = { model, scored: 0, cut: 0, failed: [], usage: emptyUsage(), costUsd: 0 };
   let fatal: string | null = null;
   try {
-    const { data: clips, error } = await db
-      .from("clips")
-      .select("id, title, transcript, format, duration_seconds, source_videos (title)")
-      .eq("status", "candidate")
-      .is("scored_at", null)
-      .order("created_at");
-    if (error) throw new Error(`Failed to load unscored clips: ${error.message}`);
+    let query = db.from("clips").select("id, title, transcript, format, duration_seconds, source_videos (title)");
+    // Cut clips are saved as rejected. Approved, scheduled, and posted clips are never re-scored.
+    query = all ? query.in("status", ["candidate", "rejected"]) : query.eq("status", "candidate").is("scored_at", null);
+    const { data: clips, error } = await query.order("created_at");
+    if (error) throw new Error(`Failed to load clips to score: ${error.message}`);
     const pastClips = await loadPastClips(db);
-    log(`Scoring ${clips.length} clips with ${model} and ${pastClips.length} past clips for calibration.`);
+    log(`${all ? "Re-scoring" : "Scoring"} ${clips.length} clips with ${model} and ${pastClips.length} past clips for calibration.`);
 
     const queue = [...clips];
     const worker = async () => {

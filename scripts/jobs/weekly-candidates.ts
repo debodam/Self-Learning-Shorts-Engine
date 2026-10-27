@@ -1,4 +1,4 @@
-import { scoreUnscoredClips } from "@/lib/clip-scoring";
+import { runScoring } from "@/lib/clip-scoring";
 import { addUsage, emptyUsage, estimateCostUsd, scoreClip, SCORING_MODEL } from "@/lib/integrations/claude";
 import { listClips, submitVideo } from "@/lib/integrations/opus";
 import { listRecentUploads } from "@/lib/integrations/youtube";
@@ -71,7 +71,7 @@ async function importFinishedProjects({ db, log }: JobContext) {
 
 async function scoreUnscored({ db, log }: JobContext) {
   if (db) {
-    const run = await scoreUnscoredClips(db, log);
+    const run = await runScoring(db, { log });
     log(`Scored ${run.scored}: ${run.scored - run.cut} kept as candidates, ${run.cut} cut, ${run.failed.length} failed.`);
     return;
   }

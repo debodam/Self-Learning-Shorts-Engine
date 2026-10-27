@@ -12,15 +12,41 @@ const BRAND_AND_STYLE = `Brand and style, for everything a viewer will see (titl
 - Be factual and specific. Describe what actually happens in the clip, and name the company and role when the source video does ("Google PM candidate", "Meta system design interview").
 - No clickbait. Don't promise what the clip doesn't deliver, don't use "you won't believe", "this changes everything", shock framing, ALL CAPS, or emoji.`;
 
-const RUBRIC = `Score the clip from 1 to 5 on each category:
+const CUT_LABELS = CUT_CATEGORIES.map((c) => c[0].toUpperCase() + c.slice(1)).join(" or ");
 
-- Hook: do the first 3 seconds give a reason to keep watching? 5 opens on a moment with stakes (pushback, a mistake, a sharp question, a surprising claim). 1 opens on setup, small talk, or the middle of a thought.
-- Tension: is there something unresolved the viewer wants to see play out? 5 is a real challenge or disagreement with an outcome in doubt. 1 is a calm explanation with nothing at stake.
-- Standalone: does it make sense to someone who hasn't seen the long-form video? 5 needs no outside context. 1 depends on earlier parts of the interview or on references the viewer can't follow.
-- Payoff: does the viewer leave with a resolution or a takeaway they can use? 5 lands a clear answer, lesson, or turn. 1 cuts off before the point or never makes one.
-- Loopability: does the ending flow back into the opening, or make the viewer want to rewatch? 5 ends on a line that recontextualizes the start. 1 ends abruptly or with an outro.
+const RUBRIC = `Score the clip from 1 to 5 on each category. Score against what a good Aced clip looks like, not a perfect viral clip:
+- 3 is a solid clip Aced would happily post: a person on camera making a clear, specific point.
+- 4 is strong: a sharper moment, a more useful takeaway, or a cleaner opening.
+- 5 is exceptional and rare.
+- 2 means a concrete problem you can name. 1 means the clip doesn't work at all on that category.
 
-Use the full range and be strict: a 5 should be rare. Anything under ${MIN_KEEP_SCORE} on ${CUT_CATEGORIES.map((c) => c[0].toUpperCase() + c.slice(1)).join(" or ")} gets cut, so score those two honestly rather than rounding up a clip you like.`;
+Categories:
+- Hook: do the first few seconds give a reason to keep watching? 3 when someone states a clear topic, question, or claim early. 4 to 5 when it opens on stakes (pushback, a mistake, a sharp question, a surprising claim or number). Below 3 only when it opens on filler or small talk, starts mid-thought with no subject, or has no person on screen and text the viewer can't read.
+- Tension: is there something the viewer wants to see resolved? Mock interviews earn 4 to 5 for a real challenge or pushback. Conversational clips are naturally calmer: a clear, specific point earns 3 even when the delivery is calm. Don't score a conversational clip below 3 just for being calm.
+- Standalone: does it make sense to someone who hasn't seen the long-form video? A clear, specific insight from a person on camera is 3 to 4 even if calm. Below 3 only when it depends on missing context: unexplained names or personas, "as I showed you earlier", or a question the viewer never hears.
+- Payoff: does the viewer leave with a takeaway they can use? A clear, specific insight is 3 to 4. 5 lands a sharp lesson or turn. Below 3 when it cuts off before the point or never makes one.
+- Loopability: does the ending make the viewer want to rewatch? 3 ends cleanly on the point. 4 to 5 ends on a line that recontextualizes the start. Below 3 when it ends abruptly or on an outro.
+
+Clips under ${MIN_KEEP_SCORE} on ${CUT_LABELS} get cut. Only score ${CUT_LABELS} below ${MIN_KEEP_SCORE} for a concrete reason like the ones above, and name that reason in your reasoning.`;
+
+// Short, made-up examples with the scores they should get, so scores stay calibrated.
+// Keep them in sync with the rubric when it changes.
+const CALIBRATION_EXAMPLES = `Calibration examples (made up, to show the scale):
+
+1. Conversational, one speaker, 40 seconds.
+Transcript: "The number one reason I pass on PM candidates: they never say who the user is. They jump straight to features. When someone stops and asks who we're building for, I already know the rest of the interview will go well. So before you sketch anything, name the user and why they care."
+Scores: Hook 4, Tension 3, Standalone 4, Payoff 4, Loopability 3. Total 18, kept.
+Reasoning: Opens on a specific claim from a hiring manager and lands an actionable rule; calm, but the point is clear on its own.
+
+2. Mock interview, two speakers, 50 seconds.
+Transcript: "Interviewer: Why would Zillow build that? Agents already do it for free. Candidate: Fair. Let me rethink who actually feels this pain. Buyers outside a big city have no agent nearby, so the tool replaces the first agent visit, not the agent."
+Scores: Hook 5, Tension 5, Standalone 4, Payoff 4, Loopability 3. Total 21, kept.
+Reasoning: Opens on direct interviewer pushback and shows the candidate recover with a sharper user segment.
+
+3. Conversational, one speaker, 35 seconds.
+Transcript: "So, yeah, um, like I was saying about the second persona, Mark, that's where it gets interesting, because he's the one who, uh, you know, does the thing we talked about."
+Scores: Hook 1, Tension 2, Standalone 1, Payoff 2, Loopability 2. Total 8, cut.
+Reasoning: Opens on filler and depends on a persona and earlier discussion the viewer never sees.`;
 
 const FRAMING = `Framing rules for the edit:
 - Every person who speaks in the clip must be fully visible on screen while the clip plays. Never crop a speaker out.
@@ -30,13 +56,16 @@ const FRAMING = `Framing rules for the edit:
 const TITLE_RULES = `Title rules:
 - Under 60 characters.
 - Factual and specific: who, which company or role if known, and what happens. For example "Google PM candidate asks who the user is first" rather than "This PM answer is genius".
-- No clickbait, no questions meant to bait a click, no emoji.`;
+- No clickbait, no questions meant to bait a click, no emoji.
+- "Part 1", "Part 2" and similar are intentional for multi-part clips. Keep them, and don't count them against the clip.`;
 
 export const SCORING_SYSTEM_PROMPT = `${ABOUT_ACED}
 
 Your job here is to judge one candidate clip cut from a long-form video and decide whether it should make the weekly shortlist. You'll get the clip's transcript and details, and sometimes past clips with similar content and how they performed. Use those past results to calibrate: if similar clips underperformed, look for the reason and score accordingly.
 
 ${RUBRIC}
+
+${CALIBRATION_EXAMPLES}
 
 Also classify the hook as one of: ${HOOK_TYPES.join(", ")}.
 

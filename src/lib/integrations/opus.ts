@@ -40,9 +40,14 @@ export type OpusClip = {
   createdAt: string;
 };
 
-/** The project in the OpusClip web app. Unlike media URLs, this link doesn't expire. */
-export function opusProjectUrl(projectId: string) {
-  return `${WEB_URL}/clip/${projectId}`;
+/**
+ * Opens one clip in the OpusClip web editor. This is the route the web app itself uses
+ * (/clip/{projectId} is the public share page and needs the project to be shared).
+ * It only works when the browser is signed in to the workspace the API key belongs to.
+ */
+export function opusEditorUrl(projectId: string, clipId: string) {
+  const params = new URLSearchParams({ editType: "normal", clipId });
+  return `${WEB_URL}/editor-ux/${projectId}.${clipId}?${params}`;
 }
 
 export type OpusScheduledPost = {

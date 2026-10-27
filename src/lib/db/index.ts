@@ -1,5 +1,5 @@
 // Data access layer. Every function reads from Supabase when it's configured
 // and returns mock data otherwise, so the app always runs without keys.
-export { getLastScoringRunSummary, getScoredClips, getSyncedOpusProjectIds, getUnscoredClips } from "@/lib/db/clips";
+export { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds } from "@/lib/db/clips";
 export { getWeeklyLearnings } from "@/lib/db/learnings";
 export { getPostedClips } from "@/lib/db/performance";

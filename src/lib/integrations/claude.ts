@@ -121,8 +121,16 @@ export type ClipScore = {
 };
 
 const MAX_SCORING_ATTEMPTS = 2;
+const MAX_REASON_WORDS = 40;
 
-function scoringIssues(out: z.infer<typeof scoreSchema>) {
+/** Shortens a title to the limit at a word boundary. Last resort when Claude can't count. */
+function trimTitle(title: string) {
+  const max = CAPTION_RULES.youtube.titleMaxChars;
+  if (title.length <= max) return title;
+  return title.slice(0, max + 1).replace(/\s+\S*$/, "").replace(/[\s,:;.(-]+$/, "");
+}
+
+function scoringIssues(out: z.infer<typeof scoreSchema>, { allowLongTitles = false } = {}) {
   const { titleMaxChars, descriptionLines } = CAPTION_RULES.youtube;
   const issues = [
     ...checkViewerText("Suggested title", out.suggested_title),
@@ -132,8 +140,12 @@ function scoringIssues(out: z.infer<typeof scoreSchema>) {
   // Say exactly how much to cut: "must be under 60" alone gets a 60 character retry.
   const tooLong = (label: string, title: string) =>
     `${label} is ${title.length} characters; it must be ${titleMaxChars} or fewer, so cut at least ${title.length - titleMaxChars}`;
-  if (out.suggested_title.length > titleMaxChars) issues.push(tooLong("Suggested title", out.suggested_title));
-  if (out.youtube.title.length > titleMaxChars) issues.push(tooLong("YouTube title", out.youtube.title));
+  if (!allowLongTitles) {
+    if (out.suggested_title.length > titleMaxChars) issues.push(tooLong("Suggested title", out.suggested_title));
+    if (out.youtube.title.length > titleMaxChars) issues.push(tooLong("YouTube title", out.youtube.title));
+  }
+  const words = out.reasoning.trim().split(/\s+/).length;
+  if (words > MAX_REASON_WORDS) issues.push(`Reasoning is ${words} words; keep it to one sentence of at most 25 words`);
   const lines = out.youtube.description.split("\n").filter((l) => l.trim()).length;
   if (lines < descriptionLines[0] || lines > descriptionLines[1]) issues.push(`YouTube description must be 1 to 2 lines, has ${lines}`);
   return issues;
@@ -169,7 +181,12 @@ export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] 
     // Append the whole response unchanged (thinking blocks included) before the follow-up.
     messages.push({ role: "assistant", content: response.content }, { role: "user", content: buildScoringRepairMessage(issues) });
   }
-  if (!out || issues.length) throw new Error(`Score still breaks the rules after ${MAX_SCORING_ATTEMPTS} attempts: ${issues.join("; ")}`);
+  if (!out) throw new Error("Claude returned no parseable score");
+  // Titles a character or two over after the repair attempt get trimmed rather than
+  // losing the whole score. Anything else still wrong fails the clip.
+  issues = scoringIssues(out, { allowLongTitles: true });
+  if (issues.length) throw new Error(`Score still breaks the rules after ${MAX_SCORING_ATTEMPTS} attempts: ${issues.join("; ")}`);
+  out = { ...out, suggested_title: trimTitle(out.suggested_title), youtube: { ...out.youtube, title: trimTitle(out.youtube.title) } };
 
   // Clamp in case the model strays outside 1 to 5; the schema can't express the range.
   const scores = Object.fromEntries(
