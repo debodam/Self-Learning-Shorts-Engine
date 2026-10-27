@@ -15,14 +15,13 @@ import {
 } from "@/lib/integrations/opus";
 import { getVideoInfo, normalizeYouTubeUrl } from "@/lib/integrations/youtube";
 import { saveOpusClips } from "@/lib/opus-sync";
+import { easternDate, slotsFrom, tomorrowEastern } from "@/lib/schedule-slots";
 
 // The weekly flow (see CLAUDE.md): submit 2 videos to Opus, sync and score their clips
 // when Opus finishes, pick the top 7, then schedule one per day at noon Eastern.
 
 export const VIDEOS_PER_WEEK = 2;
 export const PICKS_PER_WEEK = 7;
-const TIME_ZONE = "America/New_York";
-const POST_HOUR = 12;
 
 export type VideoStatus = "submitted" | "processing" | "ready" | "failed";
 
@@ -32,11 +31,6 @@ export function opusWritable() {
 }
 
 // Weeks -------------------------------------------------------------------------
-
-/** "YYYY-MM-DD" for a moment, in New York. */
-function easternDate(at: Date) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
-}
 
 /** The Monday of the current week in New York, as "YYYY-MM-DD". */
 function currentWeekStart(now = new Date()) {
@@ -70,7 +64,7 @@ export async function startWeek(db: Db, links: string[]) {
     }),
   );
   const brandTemplateId = await findBrandTemplateId();
-  if (!brandTemplateId) throw new Error("No Aced brand template found in Opus. Set OPUSCLIP_BRAND_TEMPLATE_ID.");
+  if (!brandTemplateId) throw new Error('No "Aced Template #1" brand template found in Opus. Set OPUSCLIP_BRAND_TEMPLATE_NAME.');
 
   const { data: week, error: weekError } = await db.from("weeks").insert({ starts_on: currentWeekStart() }).select("id").single();
   if (weekError) throw new Error(`Failed to create the week: ${weekError.message}`);
@@ -79,7 +73,7 @@ export async function startWeek(db: Db, links: string[]) {
   const failed: string[] = [];
   for (const video of videos) {
     try {
-      const { projectId } = await submitVideo({ videoUrl: video.url, title: video.title, brandTemplateId });
+      const { projectId } = await submitVideo({ videoUrl: video.url, title: video.title, brandTemplateId, autoHeadline: true });
       const { error } = await db.from("source_videos").insert({
         youtube_url: video.url,
         title: video.title,
@@ -154,7 +148,7 @@ async function rankedWeekClips(db: Db, weekId: string) {
     .from("clips")
     .select("id, picked, status, score_total, score_hook, score_tension, score_standalone, score_payoff, score_loopability, source_videos!inner (week_id)")
     .eq("source_videos.week_id", weekId)
-    .eq("status", "candidate")
+    .in("status", ["candidate", "approved"])
     .not("score_total", "is", null);
   if (error) throw new Error(`Failed to load the week's clips: ${error.message}`);
   const score = (c: (typeof data)[number], k: string) => c[`score_${k}` as keyof typeof c] as number;
@@ -180,29 +174,12 @@ export async function setPick(db: Db, weekId: string, clipId: string, picked: bo
   if (picked && !clip.picked && ranked.filter((c) => c.picked).length >= PICKS_PER_WEEK) {
     throw new Error(`Already ${PICKS_PER_WEEK} picks. Unselect one first.`);
   }
-  const { error } = await db.from("clips").update({ picked }).eq("id", clipId);
+  // Unpicking a clip saved as Ready to schedule puts it back with the other candidates.
+  const { error } = await db.from("clips").update(picked ? { picked } : { picked, status: "candidate" }).eq("id", clipId);
   if (error) throw new Error(`Failed to save the pick: ${error.message}`);
 }
 
 // Scheduling --------------------------------------------------------------------
-
-/** The UTC moment it's noon in New York on a "YYYY-MM-DD" date, across daylight saving changes. */
-export function noonEastern(date: string) {
-  const [y, m, d] = date.split("-").map(Number);
-  // Noon Eastern is 16:00 UTC in daylight time and 17:00 UTC in standard time.
-  for (const utcHour of [POST_HOUR + 4, POST_HOUR + 5]) {
-    const at = new Date(Date.UTC(y, m - 1, d, utcHour));
-    const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, hour: "numeric", hourCycle: "h23" }).format(at));
-    if (hour === POST_HOUR) return at;
-  }
-  throw new Error(`Couldn't find noon Eastern on ${date}`);
-}
-
-/** One slot per day at noon Eastern, starting tomorrow. */
-export function postingSlots(count: number, now = new Date()) {
-  const [y, m, d] = easternDate(now).split("-").map(Number);
-  return Array.from({ length: count }, (_, i) => noonEastern(new Date(Date.UTC(y, m - 1, d + 1 + i)).toISOString().slice(0, 10)));
-}
 
 /** The only account clips may be posted to: the Exponent YouTube channel. */
 const ALLOWED_ACCOUNT_NAME = () => process.env.OPUSCLIP_YOUTUBE_ACCOUNT_NAME?.trim() || "Exponent";
@@ -231,48 +208,33 @@ export async function youtubePostAccount() {
   return account;
 }
 
-/** New York dates ("YYYY-MM-DD") that already have a post scheduled. */
-async function bookedDates(db: Db) {
+/** New York dates ("YYYY-MM-DD") that already have an upcoming post scheduled. */
+export async function bookedDates(db: Db) {
   const { data, error } = await db.from("posts").select("scheduled_for").eq("platform", "youtube").eq("status", "scheduled").gte("scheduled_for", new Date().toISOString());
   if (error) throw new Error(`Failed to load scheduled posts: ${error.message}`);
-  return new Set(data.flatMap((p) => (p.scheduled_for ? [easternDate(new Date(p.scheduled_for))] : [])));
-}
-
-/**
- * The next free noon-Eastern slots starting tomorrow, skipping days that already have a
- * post, so a test post and the rest of the week never land on the same day.
- */
-export async function freeSlots(db: Db, count: number, now = new Date()) {
-  const booked = await bookedDates(db);
-  const slots: Date[] = [];
-  for (let day = 1; slots.length < count && day <= count + booked.size + 1; day++) {
-    const [y, m, d] = easternDate(now).split("-").map(Number);
-    const date = new Date(Date.UTC(y, m - 1, d + day)).toISOString().slice(0, 10);
-    if (!booked.has(date)) slots.push(noonEastern(date));
-  }
-  return slots;
+  return [...new Set(data.flatMap((p) => (p.scheduled_for ? [easternDate(new Date(p.scheduled_for))] : [])))].sort();
 }
 
 export type ScheduleItem = { clipId: string; title: string; description: string };
 export type ScheduledPost = { clipId: string; title: string; publishAt: string; scheduleId: string };
 
-/**
- * Schedules the week's unscheduled picks on the Exponent YouTube channel through Opus,
- * with the titles and descriptions from the preview. items must be exactly the
- * unscheduled picks, in the preview's order. With limit 1 only the first is scheduled
- * (the "Test with 1 clip" option). Only call this after the user confirms.
- */
-export async function scheduleWeek(db: Db, weekId: string, items: ScheduleItem[], { limit }: { limit?: number } = {}) {
+/** The week's picks: unscheduled ones (candidate or saved as ready) and scheduled ones. */
+async function loadPicks(db: Db, weekId: string) {
   const { data: picks, error } = await db
     .from("clips")
     .select("id, opus_clip_id, status, source_videos!inner (week_id)")
     .eq("source_videos.week_id", weekId)
     .eq("picked", true)
-    .in("status", ["candidate", "scheduled"]);
+    .in("status", ["candidate", "approved", "scheduled"]);
   if (error) throw new Error(`Failed to load picks: ${error.message}`);
-  if (picks.length !== PICKS_PER_WEEK) throw new Error(`Pick exactly ${PICKS_PER_WEEK} clips to schedule; ${picks.length} are picked.`);
+  if (picks.length !== PICKS_PER_WEEK) throw new Error(`Pick exactly ${PICKS_PER_WEEK} clips; ${picks.length} are picked.`);
+  return picks;
+}
 
-  const unscheduled = new Map(picks.filter((p) => p.status === "candidate").map((p) => [p.id, p]));
+/** Checks the preview's items are exactly the unscheduled picks and its text follows the rules. */
+async function checkItems(db: Db, weekId: string, items: ScheduleItem[]) {
+  const picks = await loadPicks(db, weekId);
+  const unscheduled = new Map(picks.filter((p) => p.status !== "scheduled").map((p) => [p.id, p]));
   if (unscheduled.size === 0) throw new Error("Every pick is already scheduled.");
   if (items.length !== unscheduled.size || new Set(items.map((i) => i.clipId)).size !== items.length || items.some((i) => !unscheduled.has(i.clipId))) {
     throw new Error("The picks changed since the preview opened. Close it and try again.");
@@ -289,16 +251,47 @@ export async function scheduleWeek(db: Db, weekId: string, items: ScheduleItem[]
     return { ...item, title, description };
   });
   if (issues.length) throw new Error(issues.join(". "));
+  return { unscheduled, cleaned };
+}
+
+/** Saves the preview's titles and descriptions. */
+async function saveText(db: Db, items: ScheduleItem[]) {
+  for (const item of items) {
+    const { error } = await db.from("clips").update({ youtube_title: item.title, youtube_description: item.description }).eq("id", item.clipId);
+    if (error) throw new Error(`Failed to save "${item.title}": ${error.message}`);
+  }
+}
+
+/**
+ * Saves the week's unscheduled picks as Ready to schedule (status approved), with the
+ * preview's titles and descriptions. Nothing is sent to Opus.
+ */
+export async function savePicksForLater(db: Db, weekId: string, items: ScheduleItem[]) {
+  const { cleaned } = await checkItems(db, weekId, items);
+  await saveText(db, cleaned);
+  const { error } = await db.from("clips").update({ status: "approved" }).in("id", cleaned.map((i) => i.clipId));
+  if (error) throw new Error(`Failed to save the picks: ${error.message}`);
+  return cleaned.length;
+}
+
+/**
+ * Schedules the week's unscheduled picks on the Exponent YouTube channel through Opus,
+ * with the titles and descriptions from the preview, one per day at noon Eastern from
+ * startDate, skipping days that already have a post. items must be exactly the
+ * unscheduled picks, in the preview's order. With limit 1 only the first is scheduled
+ * (the "Test with 1 clip" option). Only call this after the user confirms.
+ */
+export async function scheduleWeek(db: Db, weekId: string, items: ScheduleItem[], { limit, startDate }: { limit?: number; startDate: string }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error("Pick a start date.");
+  if (startDate < tomorrowEastern()) throw new Error("The start date has to be tomorrow or later.");
+  const { unscheduled, cleaned } = await checkItems(db, weekId, items);
 
   // Save the preview's text first, so edits are kept even if scheduling fails.
-  for (const item of cleaned) {
-    const { error: saveError } = await db.from("clips").update({ youtube_title: item.title, youtube_description: item.description }).eq("id", item.clipId);
-    if (saveError) throw new Error(`Failed to save "${item.title}": ${saveError.message}`);
-  }
+  await saveText(db, cleaned);
 
   const account = await youtubePostAccount();
   const toSchedule = cleaned.slice(0, limit ?? cleaned.length);
-  const slots = await freeSlots(db, toSchedule.length);
+  const slots = slotsFrom(startDate, toSchedule.length, await bookedDates(db));
   const scheduled: ScheduledPost[] = [];
   for (const [i, item] of toSchedule.entries()) {
     const opusClipId = unscheduled.get(item.clipId)!.opus_clip_id;

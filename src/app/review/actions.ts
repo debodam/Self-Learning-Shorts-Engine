@@ -4,8 +4,9 @@ import { refresh } from "next/cache";
 import { runScoring } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
+import { addClipHeadline } from "@/lib/integrations/opus";
 import { syncOpusProject } from "@/lib/opus-sync";
-import { cancelPost, checkWeek, opusWritable, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
+import { cancelPost, checkWeek, opusWritable, savePicksForLater, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
 
 export type SyncFromOpusResult = { ok: boolean; message: string };
 export type ScoreClipsResult = SyncFromOpusResult;
@@ -137,22 +138,20 @@ const slotFormat = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "
  * with the preview's titles and descriptions. testOne schedules only the first. Only
  * called from the schedule preview's confirm buttons.
  */
-export async function scheduleWeekPicks(
-  weekId: string,
-  items: { clipId: string; title: string; description: string }[],
-  testOne = false,
-): Promise<ScheduleResult> {
-  const valid =
-    typeof weekId === "string" &&
-    Array.isArray(items) &&
-    items.every((i) => typeof i?.clipId === "string" && typeof i?.title === "string" && typeof i?.description === "string");
-  if (!valid) return { ok: false, message: "Nothing to schedule." };
+type PreviewItem = { clipId: string; title: string; description: string };
+
+const validItems = (items: unknown): items is PreviewItem[] =>
+  Array.isArray(items) &&
+  items.every((i) => typeof i?.clipId === "string" && typeof i?.title === "string" && typeof i?.description === "string");
+
+export async function scheduleWeekPicks(weekId: string, items: PreviewItem[], startDate: string, testOne = false): Promise<ScheduleResult> {
+  if (typeof weekId !== "string" || typeof startDate !== "string" || !validItems(items)) return { ok: false, message: "Nothing to schedule." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
 
   try {
-    const result = await scheduleWeek(db, weekId, items, { limit: testOne === true ? 1 : undefined });
+    const result = await scheduleWeek(db, weekId, items, { limit: testOne === true ? 1 : undefined, startDate });
     refresh();
     const posts = result.scheduled.map((p) => `"${p.title}" on ${slotFormat.format(new Date(p.publishAt))}`).join(", ");
     const rest = result.remaining ? ` ${result.remaining} left to schedule.` : "";
@@ -160,6 +159,20 @@ export async function scheduleWeekPicks(
   } catch (error) {
     console.error("Scheduling failed:", error);
     return { ok: false, message: message(error, "Couldn't schedule.") };
+  }
+}
+
+/** Saves the week's picks as Ready to schedule, with the preview's text. Schedules nothing. */
+export async function savePicks(weekId: string, items: PreviewItem[]): Promise<ScheduleResult> {
+  if (typeof weekId !== "string" || !validItems(items)) return { ok: false, message: "Nothing to save." };
+  const db = getDb();
+  if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
+  try {
+    const saved = await savePicksForLater(db, weekId, items);
+    refresh();
+    return { ok: true, message: `Saved ${saved} picks as Ready to schedule. Nothing was scheduled; open Schedule again when you're ready.` };
+  } catch (error) {
+    return { ok: false, message: message(error, "Couldn't save the picks.") };
   }
 }
 
@@ -176,5 +189,28 @@ export async function cancelScheduled(postId: string): Promise<SyncFromOpusResul
   } catch (error) {
     console.error("Canceling failed:", error);
     return { ok: false, message: message(error, "Couldn't cancel.") };
+  }
+}
+
+/**
+ * Adds the clip's suggested factual title as a headline (title card) in Opus and starts a
+ * re-render. No Opus credits. Only called after the user confirms on the card.
+ */
+export async function addHeadline(clipId: string): Promise<SyncFromOpusResult> {
+  if (typeof clipId !== "string") return { ok: false, message: "No clip." };
+  if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
+  const db = getDb();
+  if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
+  try {
+    const { data: clip, error } = await db.from("clips").select("opus_clip_id, suggested_title, title").eq("id", clipId).single();
+    if (error) throw new Error(`Failed to load the clip: ${error.message}`);
+    if (!clip.opus_clip_id) throw new Error("This clip didn't come from Opus.");
+    const text = clip.suggested_title ?? clip.title;
+    await addClipHeadline(clip.opus_clip_id, text);
+    refresh();
+    return { ok: true, message: `Added "${text}". Opus is re-rendering the clip; the preview updates in a few minutes.` };
+  } catch (error) {
+    console.error("Adding a headline failed:", error);
+    return { ok: false, message: message(error, "Couldn't add the headline.") };
   }
 }

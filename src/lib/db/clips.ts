@@ -4,7 +4,7 @@ import { rubricCategories, totalScore, type CandidateClip, type OpusMedia } from
 import { getLastScoringRun } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
-import { listClipsCached, opusEditorUrl } from "@/lib/integrations/opus";
+import { getClipHeadlineCached, listClipsCached, opusEditorUrl } from "@/lib/integrations/opus";
 import { mockCandidateClips } from "@/lib/mock/candidate-clips";
 
 export type ReviewClips = {
@@ -36,8 +36,9 @@ export async function getReviewClips(): Promise<ReviewClips> {
     .select(
       "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, status)",
     )
-    // Cut clips are saved as rejected. Scheduled clips stay visible as part of their week's picks.
-    .in("status", ["candidate", "rejected", "scheduled"])
+    // Cut clips are saved as rejected, picks saved for later as approved. Scheduled clips
+    // stay visible as part of their week's picks.
+    .in("status", ["candidate", "approved", "rejected", "scheduled"])
     .order("created_at", { ascending: false });
   if (error) throw new Error(`Failed to load clips: ${error.message}`);
 
@@ -76,10 +77,12 @@ export async function getReviewClips(): Promise<ReviewClips> {
           ? { framesChecked: row.frames_checked, faceFrames: row.face_frames, peopleCount: row.people_count ?? 0, textReadable: row.text_readable ?? true }
           : null,
       picked: row.picked,
+      readyToSchedule: row.status === "approved",
       scheduledFor: row.status === "scheduled" ? (row.posts.find((p) => p.status === "scheduled")?.scheduled_for ?? null) : null,
       weekId: row.source_videos.week_id,
       youtubeTitle: row.youtube_title,
       youtubeDescription: row.youtube_description,
+      opusClipId: row.opus_clip_id,
       // Composite Opus IDs are "{projectId}.{clipId}".
       batchId: row.opus_clip_id?.split(".")[0],
       transcript: row.transcript,
@@ -131,6 +134,21 @@ export async function getUpcomingPosts(): Promise<UpcomingPost[]> {
     .order("scheduled_for");
   if (error) throw new Error(`Failed to load the schedule: ${error.message}`);
   return data.map((p) => ({ id: p.id, clipTitle: p.clips.youtube_title ?? p.clips.title, scheduledFor: p.scheduled_for!, status: p.status }));
+}
+
+/**
+ * Fills in whether each of the week's picks has a headline in Opus. One request per pick
+ * (at most 7, cached), so it's only done for picks. Picks that can't be checked stay unknown.
+ */
+export async function withPickHeadlines(clips: CandidateClip[], weekId: string | null): Promise<CandidateClip[]> {
+  if (!weekId || !isIntegrationConnected("opus")) return clips;
+  const picks = clips.filter((c) => c.picked && c.weekId === weekId && c.opusClipId);
+  const headlines = new Map(
+    await Promise.all(
+      picks.map(async (c) => [c.id, await getClipHeadlineCached(c.opusClipId!).catch(() => undefined)] as const),
+    ),
+  );
+  return clips.map((c) => (headlines.has(c.id) ? { ...c, headline: headlines.get(c.id) } : c));
 }
 
 /** The most recent scoring run, or null before the first run or without Supabase. */

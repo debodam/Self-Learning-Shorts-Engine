@@ -8,11 +8,11 @@ import { OpusSync, type OpusProjectOption } from "@/components/review/opus-sync"
 import { ReviewBoard } from "@/components/review/review-board";
 import { ScoreClips } from "@/components/review/score-clips";
 import { WeekPanel } from "@/components/review/week-panel";
-import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds, getWeeks } from "@/lib/db";
+import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds, getWeeks, withPickHeadlines } from "@/lib/db";
 import { isIntegrationConnected, isOpusMockForced } from "@/lib/integrations/config";
 import { listProjects } from "@/lib/integrations/opus";
 import { getDb } from "@/lib/db/client";
-import { freeSlots, PICKS_PER_WEEK } from "@/lib/weeks";
+import { bookedDates } from "@/lib/weeks";
 
 // Scoring every synced clip can take a few minutes, and server actions share the page's limit.
 export const maxDuration = 300;
@@ -82,14 +82,15 @@ const weekLabel = (startsOn: string) =>
   `Week of ${new Date(`${startsOn}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
 
 async function CandidateClips() {
-  const [{ clips, scoredCount, unscoredCount }, lastRun, batches, weeks] = await Promise.all([
+  const [{ clips: allClips, scoredCount, unscoredCount }, lastRun, batches, weeks] = await Promise.all([
     getReviewClips(),
     getLastScoringRunSummary(),
     loadProjectOptions().catch(() => []),
     getWeeks(),
   ]);
+  const clips = await withPickHeadlines(allClips, weeks[0]?.id ?? null);
   const db = getDb();
-  const slots = db ? await freeSlots(db, PICKS_PER_WEEK) : [];
+  const booked = db ? await bookedDates(db) : [];
   const supabase = isIntegrationConnected("supabase");
   const weekPanel = supabase && <WeekPanel currentWeek={weeks[0] ?? null} mockOpus={isOpusMockForced()} />;
   if (clips.length === 0) {
@@ -120,7 +121,7 @@ async function CandidateClips() {
         clips={clips}
         weeks={weeks.map((w) => ({ id: w.id, label: weekLabel(w.startsOn) }))}
         batches={batches}
-        slots={slots.map((d) => d.toISOString())}
+        bookedDates={booked}
       />
     </>
   );

@@ -83,8 +83,14 @@ export type SubmitVideoInput = {
   topicKeywords?: string[];
   /** Opus calls this URL when the project finishes or fails. */
   webhookUrl?: string;
-  /** Applies a saved brand template (captions, fonts, layout). See findBrandTemplateId. */
+  /** Applies a saved brand template (captions, fonts, layout, headline style). See findBrandTemplateId. */
   brandTemplateId?: string;
+  /**
+   * Auto headline: a one-line title card at the start of each of the top 10 clips. The web
+   * app turns it on by default, but the API inherits the org default (off) unless it's set.
+   * The brand template only styles it.
+   */
+  autoHeadline?: boolean;
 };
 
 /** Submits a long-form video for clipping. Docs: POST /api/clip-projects */
@@ -102,13 +108,18 @@ export async function submitVideo(input: SubmitVideoInput): Promise<{ projectId:
       model: "ClipBasic",
       clipDurations: input.clipDurations ?? [[30, 60]],
       ...(input.topicKeywords && { topicKeywords: input.topicKeywords }),
+      // Called enableAutoHook in the API; "Auto headline" in the web app.
+      ...(input.autoHeadline !== undefined && { enableAutoHook: input.autoHeadline }),
     },
-    // Shorts are vertical.
-    renderPref: { layoutAspectRatio: "portrait" },
+    // A brand template carries its own render settings (vertical layout included), and a
+    // partial renderPref could override them, so only set it without a template.
+    ...(!input.brandTemplateId && { renderPref: { layoutAspectRatio: "portrait" } }),
     ...(input.webhookUrl && {
       conclusionActions: [{ type: "WEBHOOK", url: input.webhookUrl, notifyFailure: true }],
     }),
   };
+  // The exact request, minus the key, so a project's settings can be checked later.
+  console.info(`OpusClip submit: POST ${BASE_URL}/clip-projects ${JSON.stringify(body)}`);
   // TODO(opus): the docs don't show the create-project response body. Confirm where the
   // project ID lives; these are the likely shapes.
   const res = await fetchJson<{ id?: string; projectId?: string; data?: { id?: string; projectId?: string } }>(
@@ -144,18 +155,27 @@ export async function getProjectStage(projectId: string): Promise<string | null>
   return project?.stage ?? null;
 }
 
-/**
- * The brand template to clip with: OPUSCLIP_BRAND_TEMPLATE_ID, or else the organization's
- * template whose name starts with "Aced". Null when neither exists.
- */
-export async function findBrandTemplateId(): Promise<string | null> {
-  const configured = process.env.OPUSCLIP_BRAND_TEMPLATE_ID?.trim();
-  if (configured) return configured;
-  if (!connected()) return "mock-aced-template";
+export type OpusBrandTemplate = { id: string; name: string };
+
+/** The organization's saved brand templates. Docs: GET /api/brand-templates */
+export async function listBrandTemplates(): Promise<OpusBrandTemplate[]> {
+  if (!connected()) return [{ id: "mock-aced-template", name: "Aced Template #1" }];
   type Raw = { templateId?: string; id?: string; name?: string };
   const res = await fetchJson<Raw[] | { data: Raw[] }>("OpusClip", `${BASE_URL}/brand-templates?q=mine`, { headers: headers() });
-  const template = (Array.isArray(res) ? res : res.data).find((t) => /^aced\b/i.test(t.name ?? ""));
-  return template?.templateId ?? template?.id ?? null;
+  return (Array.isArray(res) ? res : res.data).flatMap((t) => {
+    const id = t.templateId ?? t.id;
+    return id ? [{ id, name: t.name ?? "" }] : [];
+  });
+}
+
+/**
+ * The brand template to clip with, looked up by name from Opus each time rather than
+ * stored: OPUSCLIP_BRAND_TEMPLATE_NAME, default "Aced Template #1". Null if it's missing.
+ */
+export async function findBrandTemplateId(): Promise<string | null> {
+  const name = process.env.OPUSCLIP_BRAND_TEMPLATE_NAME?.trim() || "Aced Template #1";
+  const template = (await listBrandTemplates()).find((t) => t.name.trim().toLowerCase() === name.toLowerCase());
+  return template?.id ?? null;
 }
 
 export type OpusSocialAccount = {
@@ -276,6 +296,151 @@ export function listClipsCached(projectId: string): Promise<OpusClip[]> {
   clips.catch(() => clipsCache.delete(projectId));
   return clips;
 }
+
+// Headlines ----------------------------------------------------------------------
+// Opus's REST docs don't cover clip editing, but its official CLI (opus-pro/opus-skills)
+// edits clips by fetching the clip's editing script, changing it, and posting it back to
+// re-render. Text overlays live in a TextOverlayTrack. Editing doesn't use credits.
+
+/** How long an added headline stays on screen, from the start of the clip. */
+const HEADLINE_SECONDS = 5;
+
+type EditingTrack = { trackType?: string; sections?: EditingSection[] } & Record<string, unknown>;
+type EditingSection = {
+  sectionTimeline?: { in?: number; out?: number };
+  segments?: { content?: { textElements?: { text?: string }[] } }[];
+} & Record<string, unknown>;
+type HeadlineStyle = {
+  font?: { family?: string; style?: string[]; color?: string; numericalSize?: number };
+  backgroundColor?: string;
+  borderRadius?: number;
+  textAlign?: string;
+  widthPct?: number;
+};
+type ClipDetail = { editingScript?: { tracks?: EditingTrack[] }; renderPref?: { autoHookStyle?: HeadlineStyle } };
+
+async function getClipDetail(opusClipId: string) {
+  const res = await fetchJson<ClipDetail | { data: ClipDetail }>(
+    "OpusClip",
+    `${BASE_URL}/exportable-clips/${encodeURIComponent(opusClipId)}?include=editingScript`,
+    { headers: headers() },
+  );
+  const detail = "data" in res && res.data ? res.data : (res as ClipDetail);
+  if (!Array.isArray(detail.editingScript?.tracks)) throw new Error(`OpusClip: clip ${opusClipId} has no editing script`);
+  return detail as ClipDetail & { editingScript: { tracks: EditingTrack[] } };
+}
+
+function overlayText(section: EditingSection) {
+  return (section.segments?.[0]?.content?.textElements ?? []).map((e) => e.text ?? "").join("").replace(/\s+/g, " ").trim();
+}
+
+/** The text overlay that opens the clip (its headline), or null when it has none. */
+function findHeadline(tracks: EditingTrack[]) {
+  const openers = tracks
+    .filter((t) => t.trackType === "TextOverlayTrack")
+    .flatMap((t) => t.sections ?? [])
+    .filter((s) => (s.sectionTimeline?.in ?? Infinity) < 1000)
+    .sort((a, b) => (a.sectionTimeline!.in ?? 0) - (b.sectionTimeline!.in ?? 0));
+  return openers.length ? overlayText(openers[0]) || null : null;
+}
+
+/** The clip's headline text, or null when the clip has none. Mock clips never have one. */
+export async function getClipHeadline(opusClipId: string): Promise<string | null> {
+  if (!connected()) return null;
+  return findHeadline((await getClipDetail(opusClipId)).editingScript.tracks);
+}
+
+const headlineCache = new Map<string, { at: number; headline: Promise<string | null> }>();
+
+/** getClipHeadline with a 5 minute cache, for page loads. Cleared when a headline is added. */
+export function getClipHeadlineCached(opusClipId: string) {
+  const hit = headlineCache.get(opusClipId);
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.headline;
+  const headline = getClipHeadline(opusClipId);
+  headlineCache.set(opusClipId, { at: Date.now(), headline });
+  headline.catch(() => headlineCache.delete(opusClipId));
+  return headline;
+}
+
+let idCounter = 0;
+const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}${(idCounter++).toString(36)}`;
+
+/**
+ * Builds the editing script with a headline added: a text overlay for the first few
+ * seconds, styled like the brand template's Auto headline. Pure, so it can be checked
+ * without saving anything.
+ */
+export function withHeadline(detail: ClipDetail & { editingScript: { tracks: EditingTrack[] } }, text: string) {
+  const tracks = structuredClone(detail.editingScript.tracks);
+  const clipEndMs = Math.max(
+    0,
+    ...tracks.filter((t) => t.trackType === "KeyFrameTrack").flatMap((t) => (t.sections ?? []).map((s) => s.sectionTimeline?.out ?? 0)),
+  );
+  if (clipEndMs <= 0) throw new Error("OpusClip: couldn't find the clip's length in its editing script");
+  const endMs = Math.min(HEADLINE_SECONDS * 1000, clipEndMs);
+  const style = detail.renderPref?.autoHookStyle ?? {};
+  const window = { duration: { type: "TS", sO: 0, eO: endMs }, timeline: { in: 0, out: endMs } };
+  const section = {
+    id: newId("section"),
+    sectionDuration: window.duration,
+    sectionTimeline: window.timeline,
+    sceneId: "S.000",
+    segments: [
+      {
+        id: newId("segment"),
+        contentType: "TextOverlay",
+        ...window,
+        // Near the top of the frame, as wide as the template's headline box.
+        position: { type: "CPct", xPct: 0, yPct: 0.75, wPct: style.widthPct ?? 0.8, hPct: 0.2 },
+        content: {
+          id: newId("content"),
+          textElements: text.split(/\s+/).filter(Boolean).map((word) => ({ text: `${word} `, color: 0, ...window })),
+          textOverlayType: "paragraph",
+          textStyle: {
+            backgroundColor: style.backgroundColor ?? "#8000FFFF",
+            fontFamily: style.font?.family ?? "Montserrat",
+            fontWeight: style.font?.style?.[0] ?? "700",
+            fontColor: style.font?.color ?? "#FFFFFFFF",
+            fontSize: style.font?.numericalSize ?? 40,
+            italic: false,
+            borderRadius: style.borderRadius ?? 10,
+            textAlign: style.textAlign ?? "center",
+          },
+          scale: 1,
+          rotation: 0,
+          ...window,
+        },
+      },
+    ],
+  };
+  let track = tracks.find((t) => t.trackType === "TextOverlayTrack" && Array.isArray(t.sections));
+  if (!track) {
+    track = { id: newId("track"), trackType: "TextOverlayTrack", sections: [] };
+    tracks.push(track);
+  }
+  track.sections!.push(section as EditingSection);
+  return { ...detail.editingScript, tracks };
+}
+
+/**
+ * Adds a headline to a clip that has none and starts a re-render of its preview. Doesn't
+ * use Opus credits. Refuses when the clip already opens with a headline.
+ */
+export async function addClipHeadline(opusClipId: string, text: string): Promise<void> {
+  if (!connected()) return;
+  const detail = await getClipDetail(opusClipId);
+  const existing = findHeadline(detail.editingScript.tracks);
+  if (existing) throw new Error(`This clip already has a headline: "${existing}".`);
+  await fetchJson("OpusClip", `${BASE_URL}/exportable-clips/${encodeURIComponent(opusClipId)}/re-render`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ editingScript: withHeadline(detail, text) }),
+  });
+  headlineCache.delete(opusClipId);
+}
+
+/** Exposed for checking an edit locally without saving it. */
+export const getClipDetailForCheck = getClipDetail;
 
 /** Gets one clip. clipId may be the bare ID or the composite "{projectId}.{clipId}". */
 export async function getClip(projectId: string, clipId: string): Promise<OpusClip | null> {

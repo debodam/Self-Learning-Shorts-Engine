@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ExternalLink, Play } from "lucide-react";
+import { useState, useTransition } from "react";
+import { ExternalLink, Play, Type } from "lucide-react";
+import { addHeadline } from "@/app/review/actions";
 import {
   formatLabels,
   MAX_TOTAL_SCORE,
@@ -87,7 +88,9 @@ export function ClipCard({
           <span className="pointer-events-none absolute left-2 top-2 flex gap-1">
             <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">{formatLabels[clip.format]}</span>
             {clip.picked && !clip.scheduledFor && (
-              <span className="rounded-full bg-primary-tint px-2 py-0.5 text-xs font-medium text-primary">Top 7</span>
+              <span className="rounded-full bg-primary-tint px-2 py-0.5 text-xs font-medium text-primary">
+                {clip.readyToSchedule ? "Ready to schedule" : "Top 7"}
+              </span>
             )}
             {clip.scheduledFor && (
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
@@ -126,6 +129,8 @@ export function ClipCard({
             </a>
           )}
         </div>
+
+        {clip.headline !== undefined && <HeadlineStatus clip={clip} />}
 
         {(clip.suggestedTitle || clip.reason || clip.cutReason) && (
           <dl className="space-y-2 rounded-md bg-page px-3 py-2.5 text-sm">
@@ -215,5 +220,55 @@ export function ClipCard({
         )}
       </div>
     </article>
+  );
+}
+
+/** Whether a pick has its title card in Opus, with a way to add one from the suggested title. */
+function HeadlineStatus({ clip }: { clip: CandidateClip }) {
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (clip.headline) {
+    return (
+      <p className="flex items-start gap-1.5 text-xs text-muted">
+        <Type className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          Headline: <span className="font-medium text-body">{clip.headline}</span>
+        </span>
+      </p>
+    );
+  }
+
+  const text = clip.suggestedTitle ?? clip.title;
+  function add() {
+    if (!window.confirm(`Add "${text}" as this clip's headline in OpusClip? Opus re-renders the clip. No credits are used.`)) return;
+    startTransition(async () => {
+      const result = await addHeadline(clip.id);
+      setMessage({ ok: result.ok, text: result.message });
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md bg-amber-50 px-3 py-2.5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Needs headline</span>
+        <div className="flex items-center gap-3 whitespace-nowrap">
+          {clip.opus && (
+            <a href={clip.opus.editorUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-amber-800 hover:underline">
+              Edit in OpusClip
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={add}
+            disabled={pending || message?.ok}
+            className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+          >
+            {pending ? "Adding" : "Add headline"}
+          </button>
+        </div>
+      </div>
+      <p className={`text-xs ${message && !message.ok ? "text-red-700" : "text-amber-900"}`}>{message?.text ?? `Adds: "${text}"`}</p>
+    </div>
   );
 }

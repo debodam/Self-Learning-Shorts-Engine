@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { CalendarCheck, CalendarClock, FlaskConical, X } from "lucide-react";
-import { scheduleWeekPicks, type ScheduleResult } from "@/app/review/actions";
+import { Bookmark, CalendarCheck, CalendarClock, FlaskConical, X } from "lucide-react";
+import { savePicks, scheduleWeekPicks, type ScheduleResult } from "@/app/review/actions";
 import type { CandidateClip } from "@/lib/clips";
+import { defaultStartDate, slotsFrom, tomorrowEastern } from "@/lib/schedule-slots";
 
 const TITLE_MAX = 59;
 
@@ -19,22 +20,24 @@ const slotFormat = new Intl.DateTimeFormat("en-US", {
 
 /**
  * Preview of the week's posts on the Exponent YouTube channel: one per day at noon
- * Eastern on the next free days, with editable titles and descriptions. Nothing is
- * scheduled until the user confirms "Test with 1 clip" or "Schedule all".
+ * Eastern from a start date, skipping days that already have a post, with editable titles
+ * and descriptions. Nothing is scheduled until the user confirms "Test with 1 clip" or
+ * "Schedule all". "Save picks for later" keeps the picks and text without scheduling.
  */
 export function ScheduleDialog({
   weekId,
   picks,
-  slots,
+  bookedDates,
   onClose,
 }: {
   weekId: string;
   /** All of the week's picks, scheduled or not, in preview order. */
   picks: CandidateClip[];
-  /** Posting times for the unscheduled picks, in order. */
-  slots: string[];
+  /** New York dates that already have a post. */
+  bookedDates: string[];
   onClose: () => void;
 }) {
+  const [startDate, setStartDate] = useState(() => defaultStartDate(bookedDates));
   // Keyed by clip, since rows move from unscheduled to scheduled as posts go out.
   const [titles, setTitles] = useState<Record<string, string>>(() =>
     Object.fromEntries(picks.map((c) => [c.id, c.youtubeTitle ?? c.suggestedTitle ?? c.title])),
@@ -51,6 +54,10 @@ export function ScheduleDialog({
   }, []);
 
   const unscheduled = picks.filter((c) => !c.scheduledFor);
+  const minDate = tomorrowEastern();
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(startDate) && startDate >= minDate;
+  // The same math the server uses, so the preview shows the dates that get scheduled.
+  const slots = validDate ? slotsFrom(startDate, unscheduled.length, bookedDates).map((d) => d.toISOString()) : [];
   const scheduledCount = picks.length - unscheduled.length;
   const invalid = unscheduled.some((c) => {
     const title = titles[c.id].trim();
@@ -70,7 +77,15 @@ export function ScheduleDialog({
     setResult(null);
     startTransition(async () => {
       const items = unscheduled.map((c) => ({ clipId: c.id, title: titles[c.id], description: descriptions[c.id] }));
-      setResult(await scheduleWeekPicks(weekId, items, testOne));
+      setResult(await scheduleWeekPicks(weekId, items, startDate, testOne));
+    });
+  }
+
+  function saveForLater() {
+    setResult(null);
+    startTransition(async () => {
+      const items = unscheduled.map((c) => ({ clipId: c.id, title: titles[c.id], description: descriptions[c.id] }));
+      setResult(await savePicks(weekId, items));
     });
   }
 
@@ -86,9 +101,23 @@ export function ScheduleDialog({
         <div>
           <h2 className="text-lg font-semibold text-heading">Schedule this week&apos;s 7 clips</h2>
           <p className="text-sm text-muted">
-            One per day at 12pm Eastern on the Exponent YouTube channel, through OpusClip. Edit titles and descriptions
-            before confirming. Try 1 clip first to check it in OpusClip.
+            One per day at 12pm Eastern on the Exponent YouTube channel, through OpusClip, skipping days that already
+            have a post. Edit titles and descriptions before confirming. Try 1 clip first to check it in OpusClip.
           </p>
+          {unscheduled.length > 0 && (
+            <label className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium text-heading">Start date</span>
+              <input
+                type="date"
+                value={startDate}
+                min={minDate}
+                disabled={pending}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={`rounded-lg border px-2.5 py-1.5 text-sm text-body ${validDate ? "border-line" : "border-red-400"}`}
+              />
+              {!validDate && <span className="text-xs text-red-600">Pick tomorrow or later.</span>}
+            </label>
+          )}
         </div>
         <button type="button" onClick={() => dialog.current?.close()} aria-label="Close" className="rounded-md p-1 text-muted hover:bg-page">
           <X className="size-5" />
@@ -114,7 +143,7 @@ export function ScheduleDialog({
           return (
             <li key={clip.id} className="flex flex-col gap-2 px-6 py-4">
               <p className="text-xs font-medium uppercase tracking-wide text-primary">
-                {slot ? slotFormat.format(new Date(slot)) : "No free day found"}
+                {slot ? slotFormat.format(new Date(slot)) : "Pick a start date"}
               </p>
               <label className="flex flex-col gap-1">
                 <span className="sr-only">YouTube title for {clip.title}</span>
@@ -156,6 +185,15 @@ export function ScheduleDialog({
           </button>
           {unscheduled.length > 0 && (
             <>
+              <button
+                type="button"
+                onClick={saveForLater}
+                disabled={pending || invalid}
+                className="flex items-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-body hover:bg-page disabled:cursor-not-allowed disabled:text-muted"
+              >
+                <Bookmark className="size-4" />
+                Save picks for later
+              </button>
               <button
                 type="button"
                 onClick={() => schedule(true)}

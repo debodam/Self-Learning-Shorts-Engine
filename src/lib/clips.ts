@@ -63,12 +63,18 @@ export type CandidateClip = {
   vision?: { framesChecked: number; faceFrames: number; peopleCount: number; textReadable: boolean } | null;
   /** One of its week's picks to schedule. */
   picked?: boolean;
+  /** The clip's headline (title card) in Opus: text, null when it has none, missing when not checked. */
+  headline?: string | null;
+  /** Saved as one of the week's picks to schedule later ("Save picks for later"). */
+  readyToSchedule?: boolean;
   /** When the clip's YouTube post goes out. Set once it's scheduled. */
   scheduledFor?: string | null;
   /** The week the clip's source video was submitted in. Missing for videos synced by hand. */
   weekId?: string | null;
   /** The Opus project the clip came from. Missing for clips not from Opus. */
   batchId?: string;
+  /** Composite "{projectId}.{clipId}". */
+  opusClipId?: string | null;
   youtubeTitle?: string | null;
   youtubeDescription?: string | null;
   transcript?: string | null;

@@ -22,14 +22,14 @@ export function ReviewBoard({
   clips,
   weeks,
   batches,
-  slots,
+  bookedDates,
 }: {
   clips: CandidateClip[];
   /** Newest first; the first is the current week. */
   weeks: WeekOption[];
   batches: OpusProjectOption[];
-  /** Free posting times, soonest first, for the picks not scheduled yet. */
-  slots: string[];
+  /** New York dates that already have a post, so the schedule skips them. */
+  bookedDates: string[];
 }) {
   const currentWeekId = weeks[0]?.id ?? null;
   const [query, setQuery] = useState("");
@@ -80,7 +80,9 @@ export function ReviewBoard({
         ? "All 7 are scheduled. See the Schedule page."
         : unscheduledCount < pickCount
           ? `${pickCount - unscheduledCount} scheduled, ${unscheduledCount} to go.`
-          : "One per day at 12pm Eastern on YouTube, starting tomorrow.";
+          : picks.every((c) => c.readyToSchedule)
+            ? "Saved as Ready to schedule. Open Schedule to pick a start date."
+            : "One per day at 12pm Eastern on YouTube from the start date you pick.";
   }
   if (!currentWeekId) hint = "Start a week above. Its top 7 clips are picked automatically after scoring.";
 
@@ -185,7 +187,7 @@ export function ReviewBoard({
       )}
 
       {scheduling && currentWeekId && (
-        <ScheduleDialog weekId={currentWeekId} picks={picks} slots={slots} onClose={() => setScheduling(false)} />
+        <ScheduleDialog weekId={currentWeekId} picks={picks} bookedDates={bookedDates} onClose={() => setScheduling(false)} />
       )}
     </>
   );
