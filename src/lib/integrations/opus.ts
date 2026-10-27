@@ -68,7 +68,10 @@ export type SubmitVideoInput = {
 
 /** Submits a long-form video for clipping. Docs: POST /api/clip-projects */
 export async function submitVideo(input: SubmitVideoInput): Promise<{ projectId: string }> {
-  if (!connected()) return { projectId: mockOpusProjects[0].id };
+  if (!connected()) {
+    const known = mockOpusProjects.find((p) => p.sourceUrl === input.videoUrl);
+    return { projectId: known?.id ?? `Pmock${Buffer.from(input.videoUrl).toString("base64url").slice(-10)}` };
+  }
 
   const body = {
     videoUrl: input.videoUrl,

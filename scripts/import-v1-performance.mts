@@ -247,7 +247,7 @@ async function importRows(rows: ImportRow[], url: string, serviceKey: string) {
     if (seen.has(`${postId}\n${Date.parse(r.capturedAt!)}`)) return [];
     return [{ post_id: postId, captured_at: r.capturedAt!, ...r.metrics! }];
   });
-  if (newMetrics.length) check(await db.from("metrics").insert(newMetrics), "insert metrics");
+  if (newMetrics.length) check(await db.from("metrics").insert(newMetrics).select("id"), "insert metrics");
 
   return {
     videos: videos.size,

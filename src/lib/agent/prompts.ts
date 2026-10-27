@@ -1,4 +1,4 @@
-import type { ClipFormat } from "@/lib/clips";
+import type { ClipFormat, Platform } from "@/lib/clips";
 import { CAPTION_RULES, CUT_CATEGORIES, HOOK_TYPES, MIN_KEEP_SCORE } from "@/lib/agent/rules";
 
 // System prompts and message builders for the clip agent. Keep the system prompts free of
@@ -39,6 +39,8 @@ Your job here is to judge one candidate clip cut from a long-form video and deci
 ${RUBRIC}
 
 Also classify the hook as one of: ${HOOK_TYPES.join(", ")}.
+
+Predict views in the first 7 days on each of YouTube, TikTok, and Instagram if the clip is posted. Anchor on the past clips you're given: start from what clips with a similar format, hook type, and score got, and adjust for how this clip compares. With no past clips, keep estimates modest. Predictions are compared with actual results each week, so aim for accuracy, not optimism.
 
 ${FRAMING}
 
@@ -87,10 +89,11 @@ export type ClipForAgent = {
 
 export type SimilarClip = {
   title: string;
+  format: ClipFormat;
   hookType: string | null;
   scoreTotal: number | null;
-  views: number | null;
-  avgPercentWatched: number | null;
+  /** Latest views per platform; missing when not posted there or no metrics yet. */
+  views: Partial<Record<Platform, number>>;
 };
 
 function clipDetails(clip: ClipForAgent) {
@@ -106,11 +109,13 @@ function clipDetails(clip: ClipForAgent) {
 export function buildScoringMessage(clip: ClipForAgent, similarClips: SimilarClip[] = []) {
   let message = `Score this clip.\n\n${clipDetails(clip)}`;
   if (similarClips.length > 0) {
-    const rows = similarClips.map(
-      (s) =>
-        `- "${s.title}" (hook: ${s.hookType ?? "unknown"}, score ${s.scoreTotal ?? "n/a"}/25): ${s.views ?? "n/a"} views, ${s.avgPercentWatched ?? "n/a"}% watched`,
-    );
-    message += `\n\nSimilar past clips and how they performed:\n${rows.join("\n")}`;
+    const rows = similarClips.map((s) => {
+      const views = (["youtube", "tiktok", "instagram"] as const)
+        .map((p) => `${p} ${s.views[p] ?? "n/a"}`)
+        .join(", ");
+      return `- "${s.title}" (${s.format}, hook: ${s.hookType ?? "unknown"}, score ${s.scoreTotal ?? "n/a"}/25): views ${views}`;
+    });
+    message += `\n\nPast clips and how they performed:\n${rows.join("\n")}`;
   }
   return message;
 }
@@ -121,4 +126,38 @@ export function buildCaptionsMessage(clip: ClipForAgent) {
 
 export function buildCaptionsRepairMessage(issues: string[]) {
   return `That copy breaks these rules:\n${issues.map((i) => `- ${i}`).join("\n")}\n\nRewrite all three platforms so every rule is met. Keep what already works.`;
+}
+
+// Weekly learnings -------------------------------------------------------------
+
+export const LEARNINGS_SYSTEM_PROMPT = `${ABOUT_ACED}
+
+Your job here is to review one week of posted clips and write the weekly learning report. For each clip you'll get its format, hook type, rubric scores, the views you predicted when you scored it, and the actual results so far on each platform.
+
+Write three things:
+- what_worked: 2 to 4 findings about what performed, each one sentence with the specific clip or numbers behind it.
+- what_changed: 1 to 3 concrete changes to how clips get scored, picked, framed, or captioned next week. Each should be something a person or the agent can act on.
+- reasoning: 2 to 4 sentences connecting the findings to the changes. Call out where predictions were far off and what that says about the scoring.
+
+Base every claim on the numbers given. With only a few clips, say the evidence is thin rather than overstating a pattern. Don't use em dashes. Refer to the brand as Aced.`;
+
+export type WeekClipResult = {
+  title: string;
+  format: ClipFormat;
+  hookType: string | null;
+  scoreTotal: number | null;
+  predicted: Partial<Record<Platform, number>>;
+  actual: Partial<Record<Platform, { views: number | null; avgPercentWatched: number | null; shares: number | null }>>;
+};
+
+export function buildLearningsMessage(weekStart: string, clips: WeekClipResult[]) {
+  const rows = clips.map((c) => {
+    const platforms = (["youtube", "tiktok", "instagram"] as const).map((p) => {
+      const a = c.actual[p];
+      const actual = a ? `${a.views ?? "n/a"} views, ${a.avgPercentWatched ?? "n/a"}% watched, ${a.shares ?? "n/a"} shares` : "no data";
+      return `  ${p}: predicted ${c.predicted[p] ?? "n/a"} views; actual ${actual}`;
+    });
+    return `- "${c.title}" (${c.format}, hook: ${c.hookType ?? "unknown"}, score ${c.scoreTotal ?? "n/a"}/25)\n${platforms.join("\n")}`;
+  });
+  return `Week starting ${weekStart}. ${clips.length} clips posted.\n\n${rows.join("\n")}`;
 }

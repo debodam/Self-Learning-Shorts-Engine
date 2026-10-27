@@ -12,18 +12,24 @@ export type Database = {
       clips: {
         Row: {
           created_at: string
+          duration_seconds: number | null
           embedding: string | null
           format: Database["public"]["Enums"]["clip_format"]
           hook: string | null
           hook_type: string | null
           id: string
           opus_clip_id: string | null
+          predicted_views_instagram: number | null
+          predicted_views_tiktok: number | null
+          predicted_views_youtube: number | null
           score_hook: number | null
           score_loopability: number | null
           score_payoff: number | null
+          score_reasoning: string | null
           score_standalone: number | null
           score_tension: number | null
           score_total: number | null
+          scored_at: string | null
           source_video_id: string
           status: Database["public"]["Enums"]["clip_status"]
           title: string
@@ -31,18 +37,24 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          duration_seconds?: number | null
           embedding?: string | null
           format: Database["public"]["Enums"]["clip_format"]
           hook?: string | null
           hook_type?: string | null
           id?: string
           opus_clip_id?: string | null
+          predicted_views_instagram?: number | null
+          predicted_views_tiktok?: number | null
+          predicted_views_youtube?: number | null
           score_hook?: number | null
           score_loopability?: number | null
           score_payoff?: number | null
+          score_reasoning?: string | null
           score_standalone?: number | null
           score_tension?: number | null
           score_total?: number | null
+          scored_at?: string | null
           source_video_id: string
           status?: Database["public"]["Enums"]["clip_status"]
           title: string
@@ -50,18 +62,24 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          duration_seconds?: number | null
           embedding?: string | null
           format?: Database["public"]["Enums"]["clip_format"]
           hook?: string | null
           hook_type?: string | null
           id?: string
           opus_clip_id?: string | null
+          predicted_views_instagram?: number | null
+          predicted_views_tiktok?: number | null
+          predicted_views_youtube?: number | null
           score_hook?: number | null
           score_loopability?: number | null
           score_payoff?: number | null
+          score_reasoning?: string | null
           score_standalone?: number | null
           score_tension?: number | null
           score_total?: number | null
+          scored_at?: string | null
           source_video_id?: string
           status?: Database["public"]["Enums"]["clip_status"]
           title?: string
@@ -198,6 +216,7 @@ export type Database = {
           created_at: string
           duration_seconds: number | null
           id: string
+          opus_project_id: string | null
           title: string
           youtube_url: string
         }
@@ -206,6 +225,7 @@ export type Database = {
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          opus_project_id?: string | null
           title: string
           youtube_url: string
         }
@@ -214,6 +234,7 @@ export type Database = {
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          opus_project_id?: string | null
           title?: string
           youtube_url?: string
         }

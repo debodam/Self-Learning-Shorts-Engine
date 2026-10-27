@@ -36,11 +36,11 @@ export type CandidateClip = {
   title: string;
   sourceVideo: string;
   format: ClipFormat;
-  /** Null until clip length is stored (not yet in the schema). */
+  /** Null when the clip length is unknown. */
   durationSeconds: number | null;
   /** Each score is 1 to 5. */
   scores: Record<RubricCategory, number>;
-  /** Predicted views in the first 7 days. Null until the agent predicts them. */
+  /** Predicted views in the first 7 days. Null until the agent scores the clip. */
   predictedViews: Record<Platform, number> | null;
 };
 

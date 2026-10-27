@@ -1,7 +1,7 @@
 import "server-only";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { fetchJson, requireEnv, type PlatformVideo, type VideoMetrics } from "@/lib/integrations/shared";
-import { mockRecentVideos, mockVideoMetrics } from "@/lib/mock/platform-videos";
+import { mockLongFormUploads, mockRecentVideos, mockVideoMetrics } from "@/lib/mock/platform-videos";
 
 // YouTube Data API v3 and YouTube Analytics API v2.
 // Docs: https://developers.google.com/youtube/v3/docs and https://developers.google.com/youtube/analytics
@@ -73,6 +73,27 @@ export async function listRecentVideos(limit = 20): Promise<PlatformVideo[]> {
     url: `https://www.youtube.com/shorts/${v.id}`,
     publishedAt: v.snippet.publishedAt,
     durationSeconds: parseDuration(v.contentDetails.duration),
+  }));
+}
+
+export type LongFormUpload = PlatformVideo & { url: string; channelTitle: string };
+
+/** Recent long-form uploads (the source videos Shorts are cut from), newest first. */
+export async function listRecentUploads(options: { limit?: number; minDurationSeconds?: number } = {}): Promise<LongFormUpload[]> {
+  const { limit = 25, minDurationSeconds = 180 } = options;
+  if (!connected()) return mockLongFormUploads.slice(0, limit);
+
+  const videos = await listRecentVideos(limit);
+  const longForm = videos.filter((v) => (v.durationSeconds ?? 0) >= minDurationSeconds);
+  if (longForm.length === 0) return [];
+  const details = await get<{ items: { id: string; snippet: { channelTitle: string } }[] }>(
+    `${DATA_API}/videos?${new URLSearchParams({ part: "snippet", id: longForm.map((v) => v.id).join(",") })}`,
+  );
+  const channelById = new Map(details.items.map((d) => [d.id, d.snippet.channelTitle]));
+  return longForm.map((v) => ({
+    ...v,
+    url: `https://www.youtube.com/watch?v=${v.id}`,
+    channelTitle: channelById.get(v.id) ?? "",
   }));
 }
 

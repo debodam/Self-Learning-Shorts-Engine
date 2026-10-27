@@ -47,3 +47,15 @@ How it behaves:
 - Imported clips get the status `posted`, and their posts get the status `posted`.
 - Running the same file again is safe. Videos, clips, and posts are matched and updated, and a metrics snapshot is only added once per post and `captured_at`. To add newer numbers, import rows with a later `captured_at`.
 - Writes are not one transaction. If a run stops partway (for example a network error), fix the cause and run it again.
+
+## Scheduled jobs
+
+Three GitHub Actions workflows, manual trigger only for now (**Actions > workflow > Run workflow**):
+
+| Workflow | What it does | Run locally |
+| --- | --- | --- |
+| Weekly candidates | Finds new long-form uploads, submits them to OpusClip, imports finished clips, and scores them with the agent | `npm run job:weekly-candidates` |
+| Metrics pull | Saves a metrics snapshot for every post it can match on YouTube, TikTok, and Instagram | `npm run job:metrics-pull` |
+| Weekly learnings | Compares predicted and actual views for last week's posts and writes the learnings entry | `npm run job:weekly-learnings` |
+
+Add `-- --dry-run` (or tick **Dry run** in Actions) to read everything and write nothing. Without Supabase keys every run is a dry run. Keys and where they come from are in [SETUP.md](SETUP.md).

@@ -5,17 +5,20 @@ import * as z from "zod/v4";
 import {
   buildCaptionsMessage,
   buildCaptionsRepairMessage,
+  buildLearningsMessage,
   buildScoringMessage,
   CAPTIONS_SYSTEM_PROMPT,
+  LEARNINGS_SYSTEM_PROMPT,
   SCORING_SYSTEM_PROMPT,
   type ClipForAgent,
   type SimilarClip,
+  type WeekClipResult,
 } from "@/lib/agent/prompts";
 import { checkViewerText, HOOK_TYPES, shouldCut, validateCaptions, type HookType, type PlatformCaptions } from "@/lib/agent/rules";
-import type { RubricCategory } from "@/lib/clips";
+import type { Platform, RubricCategory } from "@/lib/clips";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { requireEnv } from "@/lib/integrations/shared";
-import { mockCaptions, mockClipScore } from "@/lib/mock/agent";
+import { mockCaptions, mockClipScore, mockWeeklyLearning } from "@/lib/mock/agent";
 
 // Claude API calls for the clip agent. Docs: https://platform.claude.com/docs
 // Every function returns mock data when ANTHROPIC_API_KEY isn't set.
@@ -50,6 +53,7 @@ const scoreSchema = z.object({
     loopability: z.number().int(),
   }),
   hook_type: z.enum(HOOK_TYPES),
+  predicted_views: z.object({ youtube: z.number().int(), tiktok: z.number().int(), instagram: z.number().int() }),
   suggested_title: z.string(),
   framing: z.object({
     speaker_count: z.number().int(),
@@ -65,6 +69,8 @@ export type ClipScore = {
   /** True when Hook or Standalone is under 3, so the clip shouldn't be shortlisted. */
   cut: boolean;
   hookType: HookType;
+  /** Predicted views in the first 7 days. */
+  predictedViews: Record<Platform, number>;
   suggestedTitle: string;
   framing: { speakerCount: number; layout: "single" | "split"; openOnLine: string };
   reasoning: string;
@@ -100,6 +106,11 @@ export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] 
     total: Object.values(scores).reduce((a, b) => a + b, 0),
     cut: shouldCut(scores),
     hookType: out.hook_type,
+    predictedViews: {
+      youtube: Math.max(0, out.predicted_views.youtube),
+      tiktok: Math.max(0, out.predicted_views.tiktok),
+      instagram: Math.max(0, out.predicted_views.instagram),
+    },
     suggestedTitle: out.suggested_title,
     framing: {
       speakerCount: out.framing.speaker_count,
@@ -156,4 +167,37 @@ export async function writeCaptions(clip: ClipForAgent): Promise<PlatformCaption
     messages.push({ role: "assistant", content: response.content }, { role: "user", content: buildCaptionsRepairMessage(issues) });
   }
   throw new Error(`Captions still break the rules after ${MAX_CAPTION_ATTEMPTS} attempts: ${issues.join("; ")}`);
+}
+
+// Weekly learnings -------------------------------------------------------------
+
+const learningsSchema = z.object({
+  what_worked: z.array(z.string()),
+  what_changed: z.array(z.string()),
+  reasoning: z.string(),
+});
+
+export type WeeklyLearningDraft = { whatWorked: string[]; whatChanged: string[]; reasoning: string };
+
+/** Compares a week's predictions with actual results and writes the learnings entry. */
+export async function writeWeeklyLearnings(weekStart: string, clips: WeekClipResult[]): Promise<WeeklyLearningDraft> {
+  if (!connected()) return mockWeeklyLearning(clips);
+
+  const response = await getClient().beta.messages.parse({
+    model: MODEL,
+    max_tokens: 16000,
+    betas: [FALLBACK_BETA],
+    fallbacks: "default",
+    thinking: { type: "adaptive" },
+    output_config: { effort: "high", format: betaZodOutputFormat(learningsSchema) },
+    system: [{ type: "text", text: LEARNINGS_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: buildLearningsMessage(weekStart, clips) }],
+  });
+  assertUsable(response, "write the weekly learnings");
+  const out = response.parsed_output;
+  if (!out) throw new Error("Claude returned no parseable learnings");
+
+  const issues = [...out.what_worked, ...out.what_changed, out.reasoning].flatMap((t) => checkViewerText("Learnings", t));
+  if (issues.length) throw new Error(`Claude's learnings broke the rules: ${[...new Set(issues)].join("; ")}`);
+  return { whatWorked: out.what_worked, whatChanged: out.what_changed, reasoning: out.reasoning };
 }

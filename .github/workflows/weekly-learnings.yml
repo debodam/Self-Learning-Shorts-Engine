@@ -1,0 +1,44 @@
+# Compare predicted and actual views for a week of posted clips and write that week's learnings entry.
+# Manual trigger only for now. To schedule it, add a `schedule:` cron trigger.
+# Keys come from repository secrets (see SETUP.md). Any integration whose secrets are
+# missing uses mock data, and without the Supabase secrets the job runs as a dry run.
+name: Weekly learnings
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: read everything, write nothing"
+        type: boolean
+        default: false
+      week_start:
+        description: "Monday of the week to review (YYYY-MM-DD). Leave blank for last week."
+        type: string
+        required: false
+
+concurrency:
+  group: weekly-learnings
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DRY_RUN: ${{ inputs.dry_run }}
+      WEEK_START: ${{ inputs.week_start }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run job:weekly-learnings

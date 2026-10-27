@@ -53,3 +53,25 @@ export function mockVideoMetrics(platform: Platform, videoId: string): VideoMetr
     likes: Math.round(views * 0.045),
   };
 }
+
+/** Long-form source uploads, matching the Opus mock projects. */
+export const mockLongFormUploads: (PlatformVideo & { url: string; channelTitle: string })[] = [
+  {
+    platform: "youtube",
+    id: "aced0000004",
+    title: "Meta System Design Mock Interview: Design Instagram",
+    url: "https://www.youtube.com/watch?v=aced0000004",
+    publishedAt: "2026-10-20T15:00:00Z",
+    durationSeconds: 2875,
+    channelTitle: "Aced",
+  },
+  {
+    platform: "youtube",
+    id: "aced0000001",
+    title: "Google PM Mock Interview: Design a Parking App",
+    url: "https://www.youtube.com/watch?v=aced0000001",
+    publishedAt: "2026-10-19T14:00:00Z",
+    durationSeconds: 2412,
+    channelTitle: "Aced",
+  },
+];

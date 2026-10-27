@@ -15,7 +15,7 @@ export async function getCandidateClips(): Promise<CandidateClip[]> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, title, format, score_hook, score_tension, score_standalone, score_payoff, score_loopability, source_videos (title)",
+      "id, title, format, duration_seconds, score_hook, score_tension, score_standalone, score_payoff, score_loopability, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title)",
     )
     .eq("status", "candidate")
     .not("score_total", "is", null)
@@ -29,7 +29,7 @@ export async function getCandidateClips(): Promise<CandidateClip[]> {
     title: row.title,
     sourceVideo: row.source_videos.title,
     format: row.format,
-    durationSeconds: null,
+    durationSeconds: row.duration_seconds,
     // score_total is only set when all five scores are, so these are non-null.
     scores: {
       hook: row.score_hook!,
@@ -38,6 +38,10 @@ export async function getCandidateClips(): Promise<CandidateClip[]> {
       payoff: row.score_payoff!,
       loopability: row.score_loopability!,
     },
-    predictedViews: null,
+    // The scoring job sets all three together.
+    predictedViews:
+      row.predicted_views_youtube !== null && row.predicted_views_tiktok !== null && row.predicted_views_instagram !== null
+        ? { youtube: row.predicted_views_youtube, tiktok: row.predicted_views_tiktok, instagram: row.predicted_views_instagram }
+        : null,
   }));
 }
