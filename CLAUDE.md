@@ -51,6 +51,18 @@ Match Aced's product UI. Light theme, light gray page background, white sidebar,
 - Rubric, 1 to 5 each: Hook, Tension, Standalone, Payoff, Loopability. Cut anything under 3 on Hook or Standalone.
 - Weekly flow: shortlist 10 clips, approve 7, one per day at 12pm Eastern on YouTube (all three platforms from V2).
 
+## Weekly flow
+
+The Review page follows this flow. Build and change features to fit it.
+
+1. Once last week's posts are done, the user pastes 2 new Aced YouTube links.
+2. Both get submitted to OpusClip with the Aced template.
+3. When Opus finishes, the clips sync in and get scored on our rubric.
+4. The top 7 across both videos are auto-highlighted as this week's picks.
+5. The user reviews them, swaps any out if they want, and schedules them one per day at 12pm Eastern on YouTube.
+
+Submitting to Opus spends credits and scheduling posts publicly, so both always need an explicit confirm step. Schedule only to the Exponent YouTube account through OpusClip, never to Ace Your Interviews.
+
 ## Phases
 
 1. Data layer, metrics pipelines, performance page

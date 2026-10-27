@@ -61,10 +61,14 @@ export type CandidateClip = {
   cutReason?: string | null;
   /** What the scorer saw in the clip's frames. Null when frames weren't checked. */
   vision?: { framesChecked: number; faceFrames: number; peopleCount: number; textReadable: boolean } | null;
-  /** One of this week's top kept clips, so it can be approved. */
-  shortlisted?: boolean;
+  /** One of its week's picks to schedule. */
+  picked?: boolean;
+  /** The week the clip's source video was submitted in. Missing for videos synced by hand. */
+  weekId?: string | null;
   /** The Opus project the clip came from. Missing for clips not from Opus. */
   batchId?: string;
+  youtubeTitle?: string | null;
+  youtubeDescription?: string | null;
   transcript?: string | null;
   /** Missing for clips that didn't come from Opus, or when Opus couldn't be reached. */
   opus?: OpusMedia;

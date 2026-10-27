@@ -29,7 +29,7 @@ async function IntegrationsList() {
 
   return (
     <IntegrationsCard summary={`${connectedCount} of ${rows.length} connected`}>
-      {rows.map(({ integration, connected, missing }) => (
+      {rows.map(({ integration, connected, missing, forcedMock }) => (
         <li
           key={integration.id}
           className="flex flex-col gap-3 border-b border-line px-6 py-5 last:border-0 sm:flex-row sm:items-start sm:justify-between"
@@ -37,7 +37,13 @@ async function IntegrationsList() {
           <div className="min-w-0">
             <p className="font-medium text-heading">{integration.name}</p>
             <p className="mt-0.5 text-sm text-muted">{integration.description}</p>
-            {!connected && (
+            {forcedMock && (
+              <p className="mt-2 text-xs text-muted">
+                <code className="rounded bg-page px-1 py-0.5 font-mono text-body">OPUSCLIP_MOCK=true</code>: using mock
+                responses, so no credits are spent.
+              </p>
+            )}
+            {!connected && !forcedMock && (
               <p className="mt-2 text-xs text-muted">
                 Missing{" "}
                 {missing.map((name, i) => (
@@ -49,7 +55,7 @@ async function IntegrationsList() {
               </p>
             )}
           </div>
-          <StatusBadge connected={connected} />
+          <StatusBadge connected={connected} label={forcedMock ? "Mock mode" : undefined} />
         </li>
       ))}
     </IntegrationsCard>
@@ -87,7 +93,7 @@ function IntegrationsSkeleton() {
   );
 }
 
-function StatusBadge({ connected }: { connected: boolean }) {
+function StatusBadge({ connected, label }: { connected: boolean; label?: string }) {
   return (
     <span
       className={`inline-flex shrink-0 items-center gap-1.5 self-start rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -95,7 +101,7 @@ function StatusBadge({ connected }: { connected: boolean }) {
       }`}
     >
       <span className={`size-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-muted/50"}`} />
-      {connected ? "Connected" : "Not connected"}
+      {label ?? (connected ? "Connected" : "Not connected")}
     </span>
   );
 }

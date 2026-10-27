@@ -81,15 +81,37 @@ export async function listRecentVideos(limit = 20): Promise<PlatformVideo[]> {
  * before the YouTube integration is connected. Null if the lookup fails.
  */
 export async function getChannelTitle(videoUrl: string): Promise<string | null> {
+  return (await getVideoInfo(videoUrl))?.channelTitle ?? null;
+}
+
+/** Title and channel for any public video, via keyless oEmbed. Null if the video can't be found. */
+export async function getVideoInfo(videoUrl: string): Promise<{ title: string; channelTitle: string } | null> {
   try {
-    const res = await fetchJson<{ author_name?: string }>(
+    const res = await fetchJson<{ title?: string; author_name?: string }>(
       "YouTube",
       `https://www.youtube.com/oembed?${new URLSearchParams({ url: videoUrl, format: "json" })}`,
     );
-    return res.author_name ?? null;
+    return res.title ? { title: res.title, channelTitle: res.author_name ?? "" } : null;
   } catch {
     return null;
   }
+}
+
+/** The canonical watch URL for any YouTube link (watch, youtu.be, shorts, embed, live), or null. */
+export function normalizeYouTubeUrl(input: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^(www\.|m\.)/, "");
+  let id: string | null = null;
+  if (host === "youtu.be") id = url.pathname.slice(1).split("/")[0];
+  else if (host === "youtube.com") {
+    id = url.searchParams.get("v") ?? url.pathname.match(/^\/(?:shorts|embed|live)\/([^/?]+)/)?.[1] ?? null;
+  }
+  return id && /^[\w-]{11}$/.test(id) ? `https://www.youtube.com/watch?v=${id}` : null;
 }
 
 export type LongFormUpload = PlatformVideo & { url: string; channelTitle: string };

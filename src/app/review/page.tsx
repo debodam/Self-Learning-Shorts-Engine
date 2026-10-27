@@ -7,9 +7,11 @@ import { PageHeader } from "@/components/page-header";
 import { OpusSync, type OpusProjectOption } from "@/components/review/opus-sync";
 import { ReviewBoard } from "@/components/review/review-board";
 import { ScoreClips } from "@/components/review/score-clips";
-import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds } from "@/lib/db";
-import { isIntegrationConnected } from "@/lib/integrations/config";
+import { WeekPanel } from "@/components/review/week-panel";
+import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds, getWeeks } from "@/lib/db";
+import { isIntegrationConnected, isOpusMockForced } from "@/lib/integrations/config";
 import { listProjects } from "@/lib/integrations/opus";
+import { PICKS_PER_WEEK, postingSlots, schedulingLive } from "@/lib/weeks";
 
 // Scoring every synced clip can take a few minutes, and server actions share the page's limit.
 export const maxDuration = 300;
@@ -19,7 +21,7 @@ export default function ReviewPage() {
     <>
       <PageHeader
         title="Review"
-        description="This week's shortlist. Approve 7 clips to schedule one per day."
+        description="Start the week, review the top 7 picks, swap any, and schedule one per day."
         actions={
           <Suspense fallback={<span className="h-10 w-full animate-pulse rounded-lg bg-surface sm:w-96" />}>
             <OpusSyncControl />
@@ -37,6 +39,7 @@ const shortDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numer
 
 async function OpusSyncControl() {
   await connection();
+  if (isOpusMockForced()) return <p className="text-sm text-muted">Opus is in mock mode, so syncing a single project is off.</p>;
   if (!isIntegrationConnected("opus") || !isIntegrationConnected("supabase")) {
     return <p className="text-sm text-muted">Connect OpusClip and Supabase in Settings to sync clips.</p>;
   }
@@ -74,17 +77,26 @@ const runDate = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
 });
 
+const weekLabel = (startsOn: string) =>
+  `Week of ${new Date(`${startsOn}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
+
 async function CandidateClips() {
-  const [{ clips, scoredCount, unscoredCount }, lastRun, batches] = await Promise.all([
+  const [{ clips, scoredCount, unscoredCount }, lastRun, batches, weeks] = await Promise.all([
     getReviewClips(),
     getLastScoringRunSummary(),
     loadProjectOptions().catch(() => []),
+    getWeeks(),
   ]);
+  const supabase = isIntegrationConnected("supabase");
+  const weekPanel = supabase && <WeekPanel currentWeek={weeks[0] ?? null} mockOpus={isOpusMockForced()} />;
   if (clips.length === 0) {
     return (
-      <EmptyState icon={Clapperboard} title="No candidate clips yet">
-        Sync clips from an Opus project, or let the weekly candidates job do it. Scored clips show up here for review.
-      </EmptyState>
+      <>
+        {weekPanel}
+        <EmptyState icon={Clapperboard} title="No candidate clips yet">
+          Start a week above, or sync clips from an Opus project. Scored clips show up here for review.
+        </EmptyState>
+      </>
     );
   }
 
@@ -96,11 +108,18 @@ async function CandidateClips() {
 
   return (
     <>
+      {weekPanel}
       {/* Mock data has nothing to save scores to. */}
-      {isIntegrationConnected("supabase") && (
-        <ScoreClips scoredCount={scoredCount} unscoredCount={unscoredCount} lastRun={lastRunText} />
-      )}
-      <ReviewBoard clips={clips} batches={batches} />
+      {supabase && <ScoreClips scoredCount={scoredCount} unscoredCount={unscoredCount} lastRun={lastRunText} />}
+      <ReviewBoard
+        // A new week resets the filters to it.
+        key={weeks[0]?.id ?? "no-week"}
+        clips={clips}
+        weeks={weeks.map((w) => ({ id: w.id, label: weekLabel(w.startsOn) }))}
+        batches={batches}
+        slots={postingSlots(PICKS_PER_WEEK).map((d) => d.toISOString())}
+        schedulingLive={schedulingLive()}
+      />
     </>
   );
 }

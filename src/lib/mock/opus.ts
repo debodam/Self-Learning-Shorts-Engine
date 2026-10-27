@@ -1,4 +1,4 @@
-import type { OpusClip, OpusProject, OpusScheduledPost } from "@/lib/integrations/opus";
+import type { OpusClip, OpusProject, OpusScheduledPost, OpusSocialAccount } from "@/lib/integrations/opus";
 
 // Stand-in OpusClip responses for when OPUSCLIP_API_KEY isn't set.
 
@@ -90,3 +90,74 @@ export const mockOpusScheduledPosts: OpusScheduledPost[] = [
     title: "A Google PM candidate asks who the app is for before designing it.",
   },
 ];
+
+/** Same names as the real organization's accounts, so the account checks can be tested. */
+export const mockSocialAccounts: OpusSocialAccount[] = [
+  { postAccountId: "mock_youtube_exponent", platform: "YOUTUBE", name: "Exponent" },
+  { postAccountId: "mock_youtube_ace_your_interviews", platform: "YOUTUBE", name: "Ace Your Interviews" },
+  { postAccountId: "mock_tiktok_aced", platform: "TIKTOK_BUSINESS", name: "Aced (formerly Exponent)" },
+];
+
+const MOCK_CLIP_SCRIPTS: { title: string; transcript: string; durationSeconds: number }[] = [
+  {
+    title: "Interviewer pushes back on the candidate's first metric",
+    transcript:
+      "Interviewer: You said daily active users. Why would that tell you the feature worked? Candidate: Fair point. DAU could go up for reasons unrelated to the feature. I'd look at the share of new users who complete their first booking within a week instead.",
+    durationSeconds: 46,
+  },
+  {
+    title: "Hiring manager on the one question they ask every PM",
+    transcript:
+      "Every PM interview I run, I ask one question: tell me about a time you killed your own project. The candidates who have a real answer, with numbers and what they learned, are the ones I hire. The ones who say they've never killed anything worry me.",
+    durationSeconds: 38,
+  },
+  {
+    title: "Candidate structures a system design answer in 30 seconds",
+    transcript:
+      "Candidate: Before I draw anything, let me lay out how I'll approach this. First requirements and scale, then the API, then the data model, then I'll go deep on the feed ranking since that's the hard part. Interviewer: Good, that's exactly the structure I want to see.",
+    durationSeconds: 41,
+  },
+  {
+    title: "Recruiter explains why candidates get ghosted after onsites",
+    transcript:
+      "So, um, yeah, like I mentioned earlier with the second team, that's kind of where it goes, you know, it depends on the thing we talked about before.",
+    durationSeconds: 29,
+  },
+  {
+    title: "Candidate admits a mistake and recovers mid-interview",
+    transcript:
+      "Candidate: Actually, wait. I double counted the storage. If each post is a kilobyte and we have a billion a day, that's a terabyte a day, not ten. Let me redo the estimate. Interviewer: I like that you caught that yourself.",
+    durationSeconds: 52,
+  },
+  {
+    title: "Engineer's advice on negotiating a competing offer",
+    transcript:
+      "When you have a competing offer, don't lead with the number. Lead with the team you want to join and why, then say the other offer is higher and ask if they can close the gap. Recruiters can move much more for someone they know wants to be there.",
+    durationSeconds: 44,
+  },
+];
+
+/**
+ * Six plausible clips for any mock project, so the weekly flow can be tested end to end
+ * without Opus. No media URLs, so the scorer judges them from transcripts alone.
+ */
+export function mockOpusClipsFor(projectId: string): OpusClip[] {
+  return MOCK_CLIP_SCRIPTS.map((script, i) => {
+    const clipId = `mock${i + 1}`;
+    return {
+      id: `${projectId}.${clipId}`,
+      clipId,
+      projectId,
+      title: script.title,
+      description: null,
+      hashtags: [],
+      transcript: script.transcript,
+      durationSeconds: script.durationSeconds,
+      opusScore: null,
+      previewUrl: null,
+      thumbnailUrl: null,
+      exportUrl: null,
+      createdAt: new Date().toISOString(),
+    };
+  });
+}

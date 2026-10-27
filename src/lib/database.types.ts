@@ -90,6 +90,7 @@ export type Database = {
           frames_checked: number | null
           people_count: number | null
           text_readable: boolean | null
+          picked: boolean
         }
         Insert: {
           created_at?: string
@@ -123,6 +124,7 @@ export type Database = {
           frames_checked?: number | null
           people_count?: number | null
           text_readable?: boolean | null
+          picked?: boolean
         }
         Update: {
           created_at?: string
@@ -156,6 +158,7 @@ export type Database = {
           frames_checked?: number | null
           people_count?: number | null
           text_readable?: boolean | null
+          picked?: boolean
         }
         Relationships: [
           {
@@ -291,6 +294,9 @@ export type Database = {
           opus_project_id: string | null
           title: string
           youtube_url: string
+          opus_checked_at: string | null
+          opus_status: string | null
+          week_id: string | null
         }
         Insert: {
           channel: string
@@ -300,6 +306,9 @@ export type Database = {
           opus_project_id?: string | null
           title: string
           youtube_url: string
+          opus_checked_at?: string | null
+          opus_status?: string | null
+          week_id?: string | null
         }
         Update: {
           channel?: string
@@ -309,6 +318,35 @@ export type Database = {
           opus_project_id?: string | null
           title?: string
           youtube_url?: string
+          opus_checked_at?: string | null
+          opus_status?: string | null
+          week_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_videos_week_id_fkey"
+            columns: ["week_id"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      weeks: {
+        Row: {
+          created_at: string
+          id: string
+          starts_on: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          starts_on: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          starts_on?: string
         }
         Relationships: []
       }

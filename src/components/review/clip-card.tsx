@@ -15,14 +15,18 @@ function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/** Without onToggle the card is read-only, for clips that can't be approved. */
+/** Without onToggle the card is read-only, for clips that can't be picked this week. */
 export function ClipCard({
   clip,
   approved = false,
+  busy = false,
   onToggle,
 }: {
   clip: CandidateClip;
+  /** One of the week's picks. */
   approved?: boolean;
+  /** A pick change is saving. */
+  busy?: boolean;
   onToggle?: () => void;
 }) {
   const [playing, setPlaying] = useState(false);
@@ -80,8 +84,8 @@ export function ClipCard({
         {!playing && (
           <span className="pointer-events-none absolute left-2 top-2 flex gap-1">
             <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">{formatLabels[clip.format]}</span>
-            {clip.shortlisted && (
-              <span className="rounded-full bg-primary-tint px-2 py-0.5 text-xs font-medium text-primary">Shortlist</span>
+            {clip.picked && (
+              <span className="rounded-full bg-primary-tint px-2 py-0.5 text-xs font-medium text-primary">Top 7</span>
             )}
             {clip.cut && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Cut</span>}
           </span>
@@ -181,13 +185,14 @@ export function ClipCard({
         {onToggle && (
           <label className="mt-auto flex cursor-pointer items-center justify-between border-t border-line pt-3">
             <span className={`text-sm font-medium ${approved ? "text-primary" : "text-body"}`}>
-              {approved ? "Approved" : "Approve"}
+              {busy ? "Saving" : approved ? "Selected for this week" : "Select for this week"}
             </span>
             <button
               type="button"
               role="switch"
               aria-checked={approved}
-              aria-label={`Approve ${clip.title}`}
+              aria-label={`Select ${clip.title} for this week`}
+              disabled={busy}
               onClick={onToggle}
               className={`relative h-6 w-11 rounded-full transition-colors ${
                 approved ? "bg-primary" : "bg-line"

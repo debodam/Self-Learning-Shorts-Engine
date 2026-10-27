@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "next-dev-mock-opus",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": ["OPUSCLIP_MOCK=true", "npm", "run", "dev"],
+      "port": 3000
     }
   ]
 }

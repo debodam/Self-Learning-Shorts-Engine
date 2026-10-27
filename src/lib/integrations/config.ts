@@ -47,10 +47,19 @@ export const integrations: Integration[] = [
   },
 ];
 
+/**
+ * OPUSCLIP_MOCK=true forces mock Opus responses even with a key set, to test the weekly
+ * flow without spending credits. Unlike a missing key, mock data may then be saved.
+ */
+export function isOpusMockForced() {
+  return process.env.OPUSCLIP_MOCK?.trim() === "true";
+}
+
 /** Reports which env vars are set. Never returns their values. */
 export function integrationStatus(integration: Integration) {
   const missing = integration.envVars.filter((name) => !process.env[name]?.trim());
-  return { connected: missing.length === 0, missing };
+  const forcedMock = integration.id === "opus" && isOpusMockForced();
+  return { connected: missing.length === 0 && !forcedMock, missing, forcedMock };
 }
 
 export function isIntegrationConnected(id: string) {

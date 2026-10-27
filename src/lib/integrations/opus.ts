@@ -1,7 +1,7 @@
 import "server-only";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { fetchJson, requireEnv } from "@/lib/integrations/shared";
-import { mockOpusClips, mockOpusProjects, mockOpusScheduledPosts } from "@/lib/mock/opus";
+import { mockOpusClips, mockOpusClipsFor, mockOpusProjects, mockOpusScheduledPosts, mockSocialAccounts } from "@/lib/mock/opus";
 
 // OpusClip REST API. Docs: https://help.opus.pro/api-reference/overview
 // Every function returns mock data when OPUSCLIP_API_KEY isn't set.
@@ -83,6 +83,8 @@ export type SubmitVideoInput = {
   topicKeywords?: string[];
   /** Opus calls this URL when the project finishes or fails. */
   webhookUrl?: string;
+  /** Applies a saved brand template (captions, fonts, layout). See findBrandTemplateId. */
+  brandTemplateId?: string;
 };
 
 /** Submits a long-form video for clipping. Docs: POST /api/clip-projects */
@@ -94,6 +96,7 @@ export async function submitVideo(input: SubmitVideoInput): Promise<{ projectId:
 
   const body = {
     videoUrl: input.videoUrl,
+    ...(input.brandTemplateId && { brandTemplateId: input.brandTemplateId }),
     ...(input.title && { uploadedVideoAttr: { title: input.title } }),
     curationPref: {
       model: "ClipBasic",
@@ -113,7 +116,9 @@ export async function submitVideo(input: SubmitVideoInput): Promise<{ projectId:
     `${BASE_URL}/clip-projects`,
     { method: "POST", headers: headers(), body: JSON.stringify(body) },
   );
-  const projectId = res?.data?.projectId ?? res?.data?.id ?? res?.projectId ?? res?.id;
+  // Projects also carry an internal record ID; the "P..." one is what every other endpoint takes.
+  const candidates = [res?.data?.projectId, res?.data?.id, res?.projectId, res?.id].filter(Boolean) as string[];
+  const projectId = candidates.find((id) => /^P\w+$/.test(id)) ?? candidates[0];
   if (!projectId) throw new Error(`OpusClip: no project ID in create-project response: ${JSON.stringify(res)}`);
   return { projectId };
 }
@@ -128,6 +133,46 @@ type RawProject = {
   clipCount?: number;
   sourceInfo?: { type?: string; videoId?: string; title?: string };
 };
+
+/**
+ * The project's processing stage ("COMPLETE" once clips are ready), or null when it
+ * isn't in the project list yet. Mock projects are always complete.
+ */
+export async function getProjectStage(projectId: string): Promise<string | null> {
+  if (!connected()) return "COMPLETE";
+  const project = (await listProjects()).find((p) => p.id === projectId);
+  return project?.stage ?? null;
+}
+
+/**
+ * The brand template to clip with: OPUSCLIP_BRAND_TEMPLATE_ID, or else the organization's
+ * template whose name starts with "Aced". Null when neither exists.
+ */
+export async function findBrandTemplateId(): Promise<string | null> {
+  const configured = process.env.OPUSCLIP_BRAND_TEMPLATE_ID?.trim();
+  if (configured) return configured;
+  if (!connected()) return "mock-aced-template";
+  type Raw = { templateId?: string; id?: string; name?: string };
+  const res = await fetchJson<Raw[] | { data: Raw[] }>("OpusClip", `${BASE_URL}/brand-templates?q=mine`, { headers: headers() });
+  const template = (Array.isArray(res) ? res : res.data).find((t) => /^aced\b/i.test(t.name ?? ""));
+  return template?.templateId ?? template?.id ?? null;
+}
+
+export type OpusSocialAccount = {
+  postAccountId: string;
+  /** e.g. "YOUTUBE", "TIKTOK_BUSINESS", "INSTAGRAM_BUSINESS". */
+  platform: string;
+  /** The channel or account name. */
+  name: string;
+};
+
+/** Social accounts connected to the Opus organization. Docs: GET /api/social-accounts */
+export async function listSocialAccounts(): Promise<OpusSocialAccount[]> {
+  if (!connected()) return mockSocialAccounts;
+  type Raw = { postAccountId: string; platform: string; extUserName?: string };
+  const res = await fetchJson<{ data: Raw[] }>("OpusClip", `${BASE_URL}/social-accounts?q=mine`, { headers: headers() });
+  return res.data.map((a) => ({ postAccountId: a.postAccountId, platform: a.platform, name: a.extUserName ?? "" }));
+}
 
 /** Lists clip projects, newest first. */
 export async function listProjects(): Promise<OpusProject[]> {
@@ -201,7 +246,10 @@ function toClip(raw: RawExportableClip): OpusClip {
 
 /** Lists the clips Opus cut from a project. Docs: GET /api/exportable-clips?q=findByProjectId */
 export async function listClips(projectId: string): Promise<OpusClip[]> {
-  if (!connected()) return mockOpusClips.filter((c) => c.projectId === projectId);
+  if (!connected()) {
+    const known = mockOpusClips.filter((c) => c.projectId === projectId);
+    return known.length ? known : mockOpusClipsFor(projectId);
+  }
 
   // The docs show a bare array and pageNum/pageSize params. In practice the response is
   // { data, total } and the paging params are ignored: every clip comes back at once.

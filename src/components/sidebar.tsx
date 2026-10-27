@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  CalendarClock,
   ClipboardCheck,
   Lightbulb,
   Settings,
@@ -13,6 +14,7 @@ import {
 
 const navItems: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/review", label: "Review", icon: ClipboardCheck },
+  { href: "/schedule", label: "Schedule", icon: CalendarClock },
   { href: "/performance", label: "Performance", icon: BarChart3 },
   { href: "/learnings", label: "Learnings", icon: Lightbulb },
   { href: "/settings", label: "Settings", icon: Settings },
