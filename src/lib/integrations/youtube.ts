@@ -76,6 +76,22 @@ export async function listRecentVideos(limit = 20): Promise<PlatformVideo[]> {
   }));
 }
 
+/**
+ * The channel name for any public video. Uses oEmbed, which needs no key, so it works
+ * before the YouTube integration is connected. Null if the lookup fails.
+ */
+export async function getChannelTitle(videoUrl: string): Promise<string | null> {
+  try {
+    const res = await fetchJson<{ author_name?: string }>(
+      "YouTube",
+      `https://www.youtube.com/oembed?${new URLSearchParams({ url: videoUrl, format: "json" })}`,
+    );
+    return res.author_name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export type LongFormUpload = PlatformVideo & { url: string; channelTitle: string };
 
 /** Recent long-form uploads (the source videos Shorts are cut from), newest first. */

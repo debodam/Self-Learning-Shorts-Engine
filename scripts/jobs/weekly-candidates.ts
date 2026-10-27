@@ -4,6 +4,7 @@ import type { Db } from "@/lib/db/client";
 import { scoreClip } from "@/lib/integrations/claude";
 import { listClips, submitVideo } from "@/lib/integrations/opus";
 import { listRecentUploads } from "@/lib/integrations/youtube";
+import { formatFromTitle, saveOpusClips } from "@/lib/opus-sync";
 import { must, runJob, type JobContext } from "./lib";
 
 // Weekly candidates:
@@ -16,10 +17,6 @@ import { must, runJob, type JobContext } from "./lib";
 const UPLOADS_TO_CHECK = 25;
 const PAST_CLIPS_FOR_CALIBRATION = 20;
 const DRY_RUN_SCORE_LIMIT = 3;
-
-// TODO: format comes from the source video title for now. Store it on source_videos if
-// titles stop following the "Mock Interview" convention.
-const formatFromTitle = (title: string): ClipFormat => (/mock interview/i.test(title) ? "mock" : "conversational");
 
 async function submitNewUploads({ db, dryRun, log }: JobContext) {
   const uploads = await listRecentUploads({ limit: UPLOADS_TO_CHECK });
@@ -70,20 +67,8 @@ async function importFinishedProjects({ db, log }: JobContext) {
       log(`  "${video.title}": Opus is still processing.`);
       continue;
     }
-    const rows = clips.map((c) => ({
-      source_video_id: video.id,
-      opus_clip_id: c.id,
-      title: c.title,
-      transcript: c.transcript,
-      duration_seconds: c.durationSeconds || null,
-      format: formatFromTitle(video.title),
-      status: "candidate" as const,
-    }));
-    must(
-      await db.from("clips").upsert(rows, { onConflict: "opus_clip_id", ignoreDuplicates: true }).select("id"),
-      `save clips for ${video.title}`,
-    );
-    log(`  "${video.title}": imported ${clips.length} clips from Opus.`);
+    const added = await saveOpusClips(db, video, clips);
+    log(`  "${video.title}": imported ${added} clips from Opus.`);
   }
 }
 
@@ -128,7 +113,9 @@ async function scoreUnscoredClips({ db, dryRun, log }: JobContext) {
   } else {
     // Dry run: score a few clips from Opus (mock data when Opus isn't connected) to show the output.
     const uploads = await listRecentUploads({ limit: 1 });
-    const clips = uploads[0] ? await listClips((await submitVideoPreview(uploads[0].url)) ?? "") : [];
+    // With a live Opus key there's no project to preview, so nothing is scored.
+    const projectId = uploads[0] ? await submitVideoPreview(uploads[0].url) : null;
+    const clips = projectId ? await listClips(projectId) : [];
     unscored = clips.slice(0, DRY_RUN_SCORE_LIMIT).map((c) => ({
       id: c.id,
       title: c.title,

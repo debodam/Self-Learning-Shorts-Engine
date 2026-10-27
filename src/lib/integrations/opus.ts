@@ -7,12 +7,17 @@ import { mockOpusClips, mockOpusProjects, mockOpusScheduledPosts } from "@/lib/m
 // Every function returns mock data when OPUSCLIP_API_KEY isn't set.
 
 const BASE_URL = "https://api.opus.pro/api";
+const WEB_URL = "https://clip.opus.pro";
 
 export type OpusProject = {
+  /** The "P..." project ID that every other endpoint takes. */
   id: string;
   title: string | null;
   sourceUrl: string | null;
   createdAt: string | null;
+  /** "COMPLETE" once clips are ready. */
+  stage: string | null;
+  clipCount: number | null;
 };
 
 export type OpusClip = {
@@ -26,10 +31,19 @@ export type OpusClip = {
   hashtags: string[];
   transcript: string;
   durationSeconds: number;
+  /** Opus's own virality score, 0 to 100. */
+  opusScore: number | null;
+  /** Signed media URLs. They expire about a day after the request, so don't store them. */
   previewUrl: string | null;
+  thumbnailUrl: string | null;
   exportUrl: string | null;
   createdAt: string;
 };
+
+/** The project in the OpusClip web app. Unlike media URLs, this link doesn't expire. */
+export function opusProjectUrl(projectId: string) {
+  return `${WEB_URL}/clip/${projectId}`;
+}
 
 export type OpusScheduledPost = {
   scheduleId: string;
@@ -99,22 +113,46 @@ export async function submitVideo(input: SubmitVideoInput): Promise<{ projectId:
   return { projectId };
 }
 
+type RawProject = {
+  /** Internal record ID. Not accepted by other endpoints. */
+  id: string;
+  projectId: string;
+  title?: string;
+  createdAt?: string;
+  stage?: string;
+  clipCount?: number;
+  sourceInfo?: { type?: string; videoId?: string; title?: string };
+};
+
 /** Lists clip projects, newest first. */
 export async function listProjects(): Promise<OpusProject[]> {
   if (!connected()) return mockOpusProjects;
 
-  // TODO(opus): there is no documented REST endpoint for listing projects (only create,
-  // share, and get clips). GET /api/clip-projects is a guess. Confirm with Opus support
-  // or the API playground before relying on this.
-  type Raw = { id: string; title?: string; videoUrl?: string; createdAt?: string };
-  const res = await fetchJson<Raw[] | { data: Raw[] }>("OpusClip", `${BASE_URL}/clip-projects`, { headers: headers() });
-  const rows = Array.isArray(res) ? res : res.data;
-  return rows.map((p) => ({
-    id: p.id,
-    title: p.title ?? null,
-    sourceUrl: p.videoUrl ?? null,
-    createdAt: p.createdAt ?? null,
-  }));
+  // Not in the REST docs, but it's what Opus's own CLI uses (opus-pro/opus-skills).
+  // Pages start at 0; the response is { list, paging: { hasNext } }.
+  const projects: OpusProject[] = [];
+  for (let page = 0; ; page++) {
+    const params = new URLSearchParams({ page: String(page), pageSize: "100" });
+    const res = await fetchJson<{ list: RawProject[]; paging?: { hasNext?: boolean } }>(
+      "OpusClip",
+      `${BASE_URL}/clip-projects?${params}`,
+      { headers: headers() },
+    );
+    projects.push(
+      ...res.list.map((p) => ({
+        id: p.projectId,
+        title: p.title ?? p.sourceInfo?.title ?? null,
+        sourceUrl:
+          p.sourceInfo?.type === "YOUTUBE" && p.sourceInfo.videoId
+            ? `https://www.youtube.com/watch?v=${p.sourceInfo.videoId}`
+            : null,
+        createdAt: p.createdAt ?? null,
+        stage: p.stage ?? null,
+        clipCount: p.clipCount ?? null,
+      })),
+    );
+    if (!res.paging?.hasNext || res.list.length === 0) return projects;
+  }
 }
 
 // Clips ----------------------------------------------------------------------
@@ -129,7 +167,9 @@ type RawExportableClip = {
   hashtags?: string;
   text: string;
   durationMs: number;
+  score?: number;
   uriForPreview?: string;
+  uriForThumbnail?: string;
   uriForExport?: string;
   createdAt: string;
 };
@@ -143,9 +183,12 @@ function toClip(raw: RawExportableClip): OpusClip {
     title: raw.title,
     description: raw.description ?? null,
     hashtags: raw.hashtags?.split(/\s+/).filter(Boolean) ?? [],
-    transcript: raw.text,
+    // Opus marks pauses with "__silence" tokens in the clip text.
+    transcript: raw.text.replace(/\s*__silence\s*/g, " ").trim(),
     durationSeconds: Math.round(raw.durationMs / 1000),
+    opusScore: raw.score ?? null,
     previewUrl: raw.uriForPreview ?? null,
+    thumbnailUrl: raw.uriForThumbnail ?? null,
     exportUrl: raw.uriForExport ?? null,
     createdAt: raw.createdAt,
   };
@@ -155,23 +198,30 @@ function toClip(raw: RawExportableClip): OpusClip {
 export async function listClips(projectId: string): Promise<OpusClip[]> {
   if (!connected()) return mockOpusClips.filter((c) => c.projectId === projectId);
 
-  const clips: OpusClip[] = [];
-  const pageSize = 50;
-  for (let pageNum = 1; ; pageNum++) {
-    const params = new URLSearchParams({
-      q: "findByProjectId",
-      projectId,
-      pageNum: String(pageNum),
-      pageSize: String(pageSize),
-    });
-    // TODO(opus): the docs show a bare array response. Confirm whether some accounts get
-    // it wrapped in { data } like the social posting endpoints.
-    const page = await fetchJson<RawExportableClip[]>("OpusClip", `${BASE_URL}/exportable-clips?${params}`, {
-      headers: headers(),
-    });
-    clips.push(...page.map(toClip));
-    if (page.length < pageSize) return clips;
-  }
+  // The docs show a bare array and pageNum/pageSize params. In practice the response is
+  // { data, total } and the paging params are ignored: every clip comes back at once.
+  const params = new URLSearchParams({ q: "findByProjectId", projectId });
+  const res = await fetchJson<RawExportableClip[] | { data: RawExportableClip[] }>(
+    "OpusClip",
+    `${BASE_URL}/exportable-clips?${params}`,
+    { headers: headers() },
+  );
+  return (Array.isArray(res) ? res : res.data).map(toClip);
+}
+
+// Signed media URLs last about a day, so a short cache keeps page loads within the
+// 30 requests per minute rate limit without serving expired links.
+const MEDIA_CACHE_MS = 30 * 60 * 1000;
+const clipsCache = new Map<string, { at: number; clips: Promise<OpusClip[]> }>();
+
+/** listClips with a 30 minute in-memory cache. For display only; syncing calls listClips. */
+export function listClipsCached(projectId: string): Promise<OpusClip[]> {
+  const hit = clipsCache.get(projectId);
+  if (hit && Date.now() - hit.at < MEDIA_CACHE_MS) return hit.clips;
+  const clips = listClips(projectId);
+  clipsCache.set(projectId, { at: Date.now(), clips });
+  clips.catch(() => clipsCache.delete(projectId));
+  return clips;
 }
 
 /** Gets one clip. clipId may be the bare ID or the composite "{projectId}.{clipId}". */

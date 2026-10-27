@@ -25,7 +25,7 @@ export function ReviewBoard({ clips }: { clips: CandidateClip[] }) {
 
   let hint = `Approve ${WEEKLY_APPROVAL_TARGET - approvedCount} more to schedule the week.`;
   if (overTarget) hint = `Remove ${approvedCount - WEEKLY_APPROVAL_TARGET} to schedule the week.`;
-  if (canSchedule) hint = "One clip per day at 12pm Eastern on YouTube, TikTok, and Instagram.";
+  if (canSchedule) hint = "One clip per day at 12pm Eastern on YouTube.";
   if (scheduled) hint = "Scheduling isn't connected yet. Nothing was posted.";
 
   return (

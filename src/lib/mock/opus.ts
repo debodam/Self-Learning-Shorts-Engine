@@ -8,12 +8,16 @@ export const mockOpusProjects: OpusProject[] = [
     title: "Google PM Mock Interview: Design a Parking App",
     sourceUrl: "https://www.youtube.com/watch?v=aced0000001",
     createdAt: "2026-10-19T14:02:11Z",
+    stage: "COMPLETE",
+    clipCount: 2,
   },
   {
     id: "P3102615mzq7",
     title: "Meta System Design Mock Interview: Design Instagram",
     sourceUrl: "https://www.youtube.com/watch?v=aced0000004",
     createdAt: "2026-10-20T15:40:53Z",
+    stage: "COMPLETE",
+    clipCount: 1,
   },
 ];
 
@@ -28,7 +32,9 @@ export const mockOpusClips: OpusClip[] = [
     transcript:
       "Interviewer: Design a parking app. Candidate: Before I jump in, who are we building this for? Commuters who park daily, or people visiting a city once? Those need very different products.",
     durationSeconds: 48,
+    opusScore: null,
     previewUrl: "https://storage.example.com/opus/preview/qU3iVMSO77.mp4",
+    thumbnailUrl: null,
     exportUrl: "https://storage.example.com/opus/export/qU3iVMSO77.mp4",
     createdAt: "2026-10-19T14:20:40Z",
   },
@@ -42,7 +48,9 @@ export const mockOpusClips: OpusClip[] = [
     transcript:
       "Interviewer: How would you know this worked? Candidate: I'd track the share of trips where someone finds a spot within five minutes of arriving.",
     durationSeconds: 39,
+    opusScore: null,
     previewUrl: "https://storage.example.com/opus/preview/Lr8TdQ2wXa.mp4",
+    thumbnailUrl: null,
     exportUrl: "https://storage.example.com/opus/export/Lr8TdQ2wXa.mp4",
     createdAt: "2026-10-19T14:20:40Z",
   },
@@ -56,7 +64,9 @@ export const mockOpusClips: OpusClip[] = [
     transcript:
       "Interviewer: Where does 10x come from? Candidate: Fair, I assumed every user refreshes ten times a day. Let me redo that with real numbers.",
     durationSeconds: 55,
+    opusScore: null,
     previewUrl: "https://storage.example.com/opus/preview/Vb2Kp9YtRe.mp4",
+    thumbnailUrl: null,
     exportUrl: "https://storage.example.com/opus/export/Vb2Kp9YtRe.mp4",
     createdAt: "2026-10-20T16:05:12Z",
   },
