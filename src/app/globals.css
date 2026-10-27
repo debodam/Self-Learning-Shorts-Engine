@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* Aced design tokens. Use these utilities (bg-page, text-primary, border-line, ...) instead of raw colors. */
+@theme {
+  --color-page: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-line: #e7e7ea;
+
+  --color-primary: #5b2ee5;
+  --color-primary-hover: #4c23cc;
+  --color-primary-tint: #ebe5fd;
+  --color-primary-foreground: #ffffff;
+
+  --color-heading: #111114;
+  --color-body: #2b2b31;
+  --color-muted: #6b6b76;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 0.75rem;
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-body);
+}
