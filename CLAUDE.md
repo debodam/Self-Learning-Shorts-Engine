@@ -4,6 +4,16 @@
 
 Aced Shorts Engine V2. An internal dashboard plus agent that turns Aced's long-form YouTube videos into Shorts for YouTube, TikTok, and Instagram using the OpusClip API. A Claude agent scores clips, writes titles and captions, schedules approved clips, pulls performance metrics from all three platforms, and learns weekly from results using a RAG over past clips.
 
+## MVP scope
+
+The MVP is YouTube only. Instagram and TikTok move to V2.
+
+- Metrics pipelines pull from YouTube only.
+- The performance page shows only YouTube columns.
+- The review page shows only YouTube predicted performance.
+- Scheduling and publishing target YouTube only.
+- Keep the Instagram and TikTok integration stubs in the code, but hide them from the UI and the settings page until V2.
+
 ## Users
 
 Single-user auth for now. More teammates may be added later, so don't hardcode any user.
@@ -15,8 +25,8 @@ Single-user auth for now. More teammates may be added later, so don't hardcode a
 - Claude API
 - OpusClip REST API (https://api.opus.pro)
 - YouTube Data + Analytics APIs
-- Instagram Graph API
-- TikTok API
+- Instagram Graph API (V2, stub only in MVP)
+- TikTok API (V2, stub only in MVP)
 - GitHub Actions
 - Vercel
 
@@ -39,7 +49,7 @@ Match Aced's product UI. Light theme, light gray page background, white sidebar,
 - Every person speaking must be fully visible. Split layout for 2+ people.
 - Mock interview clips open on the moment of tension, then cut back to the answer.
 - Rubric, 1 to 5 each: Hook, Tension, Standalone, Payoff, Loopability. Cut anything under 3 on Hook or Standalone.
-- Weekly flow: shortlist 10 clips, approve 7, one per day at 12pm Eastern on all three platforms.
+- Weekly flow: shortlist 10 clips, approve 7, one per day at 12pm Eastern on YouTube (all three platforms from V2).
 
 ## Phases
 
@@ -47,3 +57,5 @@ Match Aced's product UI. Light theme, light gray page background, white sidebar,
 2. Opus integration, agent scoring, review and approve page, scheduling
 3. Embeddings, similar-clip retrieval, weekly learning report
 4. Competitors, comments, back catalog, second channel
+
+Phases 1 to 3 are YouTube only. Instagram and TikTok metrics, predictions, and scheduling come in V2.
