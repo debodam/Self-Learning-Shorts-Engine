@@ -4,7 +4,8 @@ import { refresh } from "next/cache";
 import { runScoring } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
-import { addClipHeadline } from "@/lib/integrations/opus";
+import { checkViewerText } from "@/lib/agent/rules";
+import { setClipHeadline } from "@/lib/integrations/opus";
 import { syncOpusProject } from "@/lib/opus-sync";
 import { cancelPost, checkWeek, opusWritable, savePicksForLater, scheduleWeek, setPick, startWeek } from "@/lib/weeks";
 
@@ -192,25 +193,31 @@ export async function cancelScheduled(postId: string): Promise<SyncFromOpusResul
   }
 }
 
+const HEADLINE_MAX = 70;
+
 /**
- * Adds the clip's suggested factual title as a headline (title card) in Opus and starts a
- * re-render. No Opus credits. Only called after the user confirms on the card.
+ * Sets a clip's headline (title card) in Opus, adding one if it has none, and starts a
+ * re-render so the preview and HD file include it. No Opus credits.
  */
-export async function addHeadline(clipId: string): Promise<SyncFromOpusResult> {
-  if (typeof clipId !== "string") return { ok: false, message: "No clip." };
+export async function setHeadline(clipId: string, text: string): Promise<SyncFromOpusResult> {
+  if (typeof clipId !== "string" || typeof text !== "string") return { ok: false, message: "No clip." };
+  const headline = text.replace(/\s+/g, " ").trim();
+  if (!headline) return { ok: false, message: "The headline can't be empty." };
+  if (headline.length > HEADLINE_MAX) return { ok: false, message: `Keep the headline under ${HEADLINE_MAX} characters; it's ${headline.length}.` };
+  const issues = checkViewerText("The headline", headline);
+  if (issues.length) return { ok: false, message: `${issues.join(". ")}.` };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
   try {
-    const { data: clip, error } = await db.from("clips").select("opus_clip_id, suggested_title, title").eq("id", clipId).single();
+    const { data: clip, error } = await db.from("clips").select("opus_clip_id").eq("id", clipId).single();
     if (error) throw new Error(`Failed to load the clip: ${error.message}`);
     if (!clip.opus_clip_id) throw new Error("This clip didn't come from Opus.");
-    const text = clip.suggested_title ?? clip.title;
-    await addClipHeadline(clip.opus_clip_id, text);
+    await setClipHeadline(clip.opus_clip_id, headline);
     refresh();
-    return { ok: true, message: `Added "${text}". Opus is re-rendering the clip; the preview updates in a few minutes.` };
+    return { ok: true, message: "Saved. Opus is re-rendering the clip with the headline; this usually takes under a minute." };
   } catch (error) {
-    console.error("Adding a headline failed:", error);
-    return { ok: false, message: message(error, "Couldn't add the headline.") };
+    console.error("Setting a headline failed:", error);
+    return { ok: false, message: message(error, "Couldn't save the headline.") };
   }
 }

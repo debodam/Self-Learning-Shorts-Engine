@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { ExternalLink, Play, Type } from "lucide-react";
-import { addHeadline } from "@/app/review/actions";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, ExternalLink, Loader2, Play, Type } from "lucide-react";
+import { setHeadline } from "@/app/review/actions";
 import {
   formatLabels,
   MAX_TOTAL_SCORE,
@@ -130,7 +131,7 @@ export function ClipCard({
           )}
         </div>
 
-        {clip.headline !== undefined && <HeadlineStatus clip={clip} />}
+        {clip.render && <HeadlineEditor clip={clip} />}
 
         {(clip.suggestedTitle || clip.reason || clip.cutReason) && (
           <dl className="space-y-2 rounded-md bg-page px-3 py-2.5 text-sm">
@@ -223,52 +224,88 @@ export function ClipCard({
   );
 }
 
-/** Whether a pick has its title card in Opus, with a way to add one from the suggested title. */
-function HeadlineStatus({ clip }: { clip: CandidateClip }) {
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+/**
+ * A pick's headline (title card), edited here and burned into the video by Opus. While
+ * Opus re-renders, the card refreshes itself until the new preview is ready.
+ */
+function HeadlineEditor({ clip }: { clip: CandidateClip }) {
+  const router = useRouter();
+  const saved = clip.headline ?? "";
+  const [text, setText] = useState(saved || clip.suggestedTitle || clip.title);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
+  const render = clip.render!;
+  const locked = render.headlineSource === "opus";
 
-  if (clip.headline) {
-    return (
-      <p className="flex items-start gap-1.5 text-xs text-muted">
-        <Type className="mt-0.5 size-3.5 shrink-0" />
-        <span>
-          Headline: <span className="font-medium text-body">{clip.headline}</span>
-        </span>
-      </p>
-    );
-  }
+  // Poll while Opus renders, so the baked-in preview appears without a manual reload.
+  useEffect(() => {
+    if (!render.rendering) return;
+    const timer = setInterval(() => router.refresh(), 8000);
+    return () => clearInterval(timer);
+  }, [render.rendering, router]);
 
-  const text = clip.suggestedTitle ?? clip.title;
-  function add() {
-    if (!window.confirm(`Add "${text}" as this clip's headline in OpusClip? Opus re-renders the clip. No credits are used.`)) return;
+  function save() {
+    setResult(null);
     startTransition(async () => {
-      const result = await addHeadline(clip.id);
-      setMessage({ ok: result.ok, text: result.message });
+      const r = await setHeadline(clip.id, text);
+      setResult({ ok: r.ok, text: r.message });
     });
   }
 
+  let status: React.ReactNode;
+  // Right after a save, Opus may not report the render yet, so trust the save until it does.
+  const justSaved = result?.ok && saved !== text.replace(/\s+/g, " ").trim();
+  if (render.rendering || justSaved) {
+    status = (
+      <span className="flex items-center gap-1.5 text-primary">
+        <Loader2 className="size-3.5 animate-spin" />
+        Opus is rendering the clip with this headline.
+      </span>
+    );
+  } else if (saved && render.exportCurrent) {
+    status = (
+      <span className="flex items-center gap-1.5 text-emerald-700">
+        <CheckCircle2 className="size-3.5" />
+        Headline is in the video that gets posted.
+      </span>
+    );
+  } else if (!saved) {
+    status = "No headline yet. Save one now, or the suggested title is added when you schedule.";
+  }
+
   return (
-    <div className="flex flex-col gap-2 rounded-md bg-amber-50 px-3 py-2.5 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Needs headline</span>
-        <div className="flex items-center gap-3 whitespace-nowrap">
-          {clip.opus && (
-            <a href={clip.opus.editorUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-amber-800 hover:underline">
-              Edit in OpusClip
-            </a>
+    <div className="flex flex-col gap-2 rounded-md border border-line px-3 py-2.5 text-sm">
+      <label className="flex flex-col gap-1">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">
+          <Type className="size-3.5" />
+          Headline on the video
+        </span>
+        <div className="flex gap-2">
+          <input
+            value={text}
+            disabled={pending || locked}
+            onChange={(e) => setText(e.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-line px-2.5 py-1.5 text-sm font-medium text-heading disabled:bg-page"
+          />
+          {!locked && (
+            <button
+              type="button"
+              onClick={save}
+              disabled={pending || !text.trim() || text.trim() === saved}
+              className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
+            >
+              {pending ? "Saving" : saved ? "Update" : "Add"}
+            </button>
           )}
-          <button
-            type="button"
-            onClick={add}
-            disabled={pending || message?.ok}
-            className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60"
-          >
-            {pending ? "Adding" : "Add headline"}
-          </button>
         </div>
-      </div>
-      <p className={`text-xs ${message && !message.ok ? "text-red-700" : "text-amber-900"}`}>{message?.text ?? `Adds: "${text}"`}</p>
+      </label>
+      <p className={`text-xs ${result && !result.ok ? "text-red-600" : "text-muted"}`}>
+        {result && !result.ok
+          ? result.text
+          : locked
+            ? "Opus generated this headline in a way its API can't edit, so it's kept as is."
+            : status}
+      </p>
     </div>
   );
 }

@@ -102,7 +102,8 @@ export function ScheduleDialog({
           <h2 className="text-lg font-semibold text-heading">Schedule this week&apos;s 7 clips</h2>
           <p className="text-sm text-muted">
             One per day at 12pm Eastern on the Exponent YouTube channel, through OpusClip, skipping days that already
-            have a post. Edit titles and descriptions before confirming. Try 1 clip first to check it in OpusClip.
+            have a post. Edit titles and descriptions before confirming. Any clip without a headline gets its suggested
+            title, and scheduling waits for Opus to render it into the video (usually under a minute).
           </p>
           {unscheduled.length > 0 && (
             <label className="mt-3 flex flex-wrap items-center gap-2 text-sm">
@@ -144,6 +145,12 @@ export function ScheduleDialog({
             <li key={clip.id} className="flex flex-col gap-2 px-6 py-4">
               <p className="text-xs font-medium uppercase tracking-wide text-primary">
                 {slot ? slotFormat.format(new Date(slot)) : "Pick a start date"}
+              </p>
+              <p className="text-xs text-muted">
+                Headline on the video:{" "}
+                <span className="font-medium text-body">
+                  {clip.headline ?? `${clip.suggestedTitle ?? clip.title} (added when scheduled)`}
+                </span>
               </p>
               <label className="flex flex-col gap-1">
                 <span className="sr-only">YouTube title for {clip.title}</span>
@@ -210,7 +217,7 @@ export function ScheduleDialog({
                 className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
               >
                 <CalendarClock className="size-4" />
-                {pending ? "Scheduling" : `Schedule ${unscheduled.length === picks.length ? "all" : "the other"} ${unscheduled.length}`}
+                {pending ? "Rendering and scheduling" : `Schedule ${unscheduled.length === picks.length ? "all" : "the other"} ${unscheduled.length}`}
               </button>
             </>
           )}

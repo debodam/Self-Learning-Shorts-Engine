@@ -8,7 +8,7 @@ import { OpusSync, type OpusProjectOption } from "@/components/review/opus-sync"
 import { ReviewBoard } from "@/components/review/review-board";
 import { ScoreClips } from "@/components/review/score-clips";
 import { WeekPanel } from "@/components/review/week-panel";
-import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds, getWeeks, withPickHeadlines } from "@/lib/db";
+import { getLastScoringRunSummary, getReviewClips, getSyncedOpusProjectIds, getWeeks, withPickRenders } from "@/lib/db";
 import { isIntegrationConnected, isOpusMockForced } from "@/lib/integrations/config";
 import { listProjects } from "@/lib/integrations/opus";
 import { getDb } from "@/lib/db/client";
@@ -88,7 +88,7 @@ async function CandidateClips() {
     loadProjectOptions().catch(() => []),
     getWeeks(),
   ]);
-  const clips = await withPickHeadlines(allClips, weeks[0]?.id ?? null);
+  const clips = await withPickRenders(allClips, weeks[0]?.id ?? null);
   const db = getDb();
   const booked = db ? await bookedDates(db) : [];
   const supabase = isIntegrationConnected("supabase");

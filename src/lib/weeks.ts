@@ -7,6 +7,9 @@ import { isIntegrationConnected, isOpusMockForced } from "@/lib/integrations/con
 import {
   cancelScheduledPost,
   findBrandTemplateId,
+  getClipRender,
+  setClipHeadline,
+  waitForRender,
   getProjectStage,
   listClips,
   listSocialAccounts,
@@ -218,11 +221,33 @@ export async function bookedDates(db: Db) {
 export type ScheduleItem = { clipId: string; title: string; description: string };
 export type ScheduledPost = { clipId: string; title: string; publishAt: string; scheduleId: string };
 
+export type PostingCheck = { clipId: string; headline: string; addedHeadline: boolean; exportUrl: string | null };
+
+/**
+ * Gets clips ready to post: adds the suggested factual title as a headline to any clip
+ * without one, waits for Opus to re-render, and checks the HD file (what Opus posts)
+ * includes the headline. Re-renders use no credits. Throws if any clip isn't ready.
+ */
+export async function prepareForPosting(clips: { id: string; opus_clip_id: string | null; suggested_title: string | null; title: string }[]) {
+  return Promise.all(
+    clips.map(async (clip): Promise<PostingCheck> => {
+      if (!clip.opus_clip_id) throw new Error(`"${clip.title}" didn't come from Opus, so it can't be posted through it.`);
+      const before = await getClipRender(clip.opus_clip_id);
+      const addedHeadline = !before.headline;
+      if (addedHeadline) await setClipHeadline(clip.opus_clip_id, clip.suggested_title ?? clip.title);
+      const after = before.rendering || addedHeadline || !before.exportCurrent ? await waitForRender(clip.opus_clip_id) : before;
+      if (!after.headline) throw new Error(`"${clip.title}" still has no headline after rendering. Nothing was scheduled.`);
+      if (!after.exportCurrent) throw new Error(`"${clip.title}" hasn't finished rendering with its headline. Nothing was scheduled.`);
+      return { clipId: clip.id, headline: after.headline, addedHeadline, exportUrl: after.exportUrl };
+    }),
+  );
+}
+
 /** The week's picks: unscheduled ones (candidate or saved as ready) and scheduled ones. */
 async function loadPicks(db: Db, weekId: string) {
   const { data: picks, error } = await db
     .from("clips")
-    .select("id, opus_clip_id, status, source_videos!inner (week_id)")
+    .select("id, opus_clip_id, status, suggested_title, title, source_videos!inner (week_id)")
     .eq("source_videos.week_id", weekId)
     .eq("picked", true)
     .in("status", ["candidate", "approved", "scheduled"]);
@@ -291,6 +316,8 @@ export async function scheduleWeek(db: Db, weekId: string, items: ScheduleItem[]
 
   const account = await youtubePostAccount();
   const toSchedule = cleaned.slice(0, limit ?? cleaned.length);
+  // Opus posts the clip's rendered HD file, so make sure each one has its headline burned in first.
+  await prepareForPosting(toSchedule.map((item) => unscheduled.get(item.clipId)!));
   const slots = slotsFrom(startDate, toSchedule.length, await bookedDates(db));
   const scheduled: ScheduledPost[] = [];
   for (const [i, item] of toSchedule.entries()) {

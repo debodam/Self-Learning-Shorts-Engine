@@ -297,18 +297,20 @@ export function listClipsCached(projectId: string): Promise<OpusClip[]> {
   return clips;
 }
 
-// Headlines ----------------------------------------------------------------------
+// Headlines and renders --------------------------------------------------------
 // Opus's REST docs don't cover clip editing, but its official CLI (opus-pro/opus-skills)
 // edits clips by fetching the clip's editing script, changing it, and posting it back to
-// re-render. Text overlays live in a TextOverlayTrack. Editing doesn't use credits.
+// re-render. A headline is a text overlay at the start of the clip. A re-render rebuilds
+// both the preview and the HD export file with the overlay burned in, and uses no credits.
 
 /** How long an added headline stays on screen, from the start of the clip. */
 const HEADLINE_SECONDS = 5;
 
 type EditingTrack = { trackType?: string; sections?: EditingSection[] } & Record<string, unknown>;
+type TextElement = { text?: string } & Record<string, unknown>;
 type EditingSection = {
   sectionTimeline?: { in?: number; out?: number };
-  segments?: { content?: { textElements?: { text?: string }[] } }[];
+  segments?: { content?: { textElements?: TextElement[] } & Record<string, unknown> }[];
 } & Record<string, unknown>;
 type HeadlineStyle = {
   font?: { family?: string; style?: string[]; color?: string; numericalSize?: number };
@@ -316,10 +318,23 @@ type HeadlineStyle = {
   borderRadius?: number;
   textAlign?: string;
   widthPct?: number;
+  /** Set when Opus generated an Auto headline itself. */
+  headline?: string | null;
 };
-type ClipDetail = { editingScript?: { tracks?: EditingTrack[] }; renderPref?: { autoHookStyle?: HeadlineStyle } };
+type RenderJob = { pending?: boolean; concludedAt?: string };
+type ClipDetail = {
+  editingScript?: { tracks?: EditingTrack[] };
+  renderPref?: { autoHookStyle?: HeadlineStyle };
+  uriForPreview?: string;
+  uriForThumbnail?: string;
+  uriForExport?: string;
+  engineClipUpdatedAt?: string;
+  renderAsVideoPreview?: RenderJob;
+  renderAsVideoFile?: RenderJob;
+};
+type ClipDetailWithScript = ClipDetail & { editingScript: { tracks: EditingTrack[] } };
 
-async function getClipDetail(opusClipId: string) {
+async function getClipDetail(opusClipId: string): Promise<ClipDetailWithScript> {
   const res = await fetchJson<ClipDetail | { data: ClipDetail }>(
     "OpusClip",
     `${BASE_URL}/exportable-clips/${encodeURIComponent(opusClipId)}?include=editingScript`,
@@ -327,51 +342,116 @@ async function getClipDetail(opusClipId: string) {
   );
   const detail = "data" in res && res.data ? res.data : (res as ClipDetail);
   if (!Array.isArray(detail.editingScript?.tracks)) throw new Error(`OpusClip: clip ${opusClipId} has no editing script`);
-  return detail as ClipDetail & { editingScript: { tracks: EditingTrack[] } };
+  return detail as ClipDetailWithScript;
 }
 
 function overlayText(section: EditingSection) {
   return (section.segments?.[0]?.content?.textElements ?? []).map((e) => e.text ?? "").join("").replace(/\s+/g, " ").trim();
 }
 
-/** The text overlay that opens the clip (its headline), or null when it has none. */
-function findHeadline(tracks: EditingTrack[]) {
-  const openers = tracks
-    .filter((t) => t.trackType === "TextOverlayTrack")
+/** The text overlay that opens the clip (its headline), if any. */
+function findHeadlineSection(tracks: EditingTrack[]) {
+  return tracks
+    .filter((t) => t.trackType === "TextOverlayTrack" || /hook|headline/i.test(t.trackType ?? ""))
     .flatMap((t) => t.sections ?? [])
-    .filter((s) => (s.sectionTimeline?.in ?? Infinity) < 1000)
-    .sort((a, b) => (a.sectionTimeline!.in ?? 0) - (b.sectionTimeline!.in ?? 0));
-  return openers.length ? overlayText(openers[0]) || null : null;
+    .filter((s) => (s.sectionTimeline?.in ?? Infinity) < 1000 && overlayText(s))
+    .sort((a, b) => (a.sectionTimeline!.in ?? 0) - (b.sectionTimeline!.in ?? 0))[0];
 }
 
-/** The clip's headline text, or null when the clip has none. Mock clips never have one. */
-export async function getClipHeadline(opusClipId: string): Promise<string | null> {
-  if (!connected()) return null;
-  return findHeadline((await getClipDetail(opusClipId)).editingScript.tracks);
+/** A clip's headline and render state, read live from Opus. */
+export type ClipRender = {
+  /** The headline text, or null when the clip has none. */
+  headline: string | null;
+  /**
+   * "overlay": a text layer at the start of the clip (Opus's Auto headline from the editor,
+   * or one added here); it can be edited. "opus": a headline Opus generated that isn't a
+   * text layer in the editing script, so it can't be edited through the API.
+   */
+  headlineSource: "overlay" | "opus" | null;
+  previewUrl: string | null;
+  thumbnailUrl: string | null;
+  exportUrl: string | null;
+  /** A preview or HD render is still running. */
+  rendering: boolean;
+  /** The HD export file was rendered after the clip's last edit, so it includes it. */
+  exportCurrent: boolean;
+};
+
+// Mock mode keeps headlines in memory so the flow can be tested end to end.
+const mockHeadlines = new Map<string, string>();
+
+export async function getClipRender(opusClipId: string): Promise<ClipRender> {
+  if (!connected()) {
+    const headline = mockHeadlines.get(opusClipId) ?? null;
+    return { headline, headlineSource: headline ? "overlay" : null, previewUrl: null, thumbnailUrl: null, exportUrl: null, rendering: false, exportCurrent: true };
+  }
+  const d = await getClipDetail(opusClipId);
+  const section = findHeadlineSection(d.editingScript.tracks);
+  const opusHeadline = d.renderPref?.autoHookStyle?.headline?.trim() || null;
+  const rendering = Boolean(d.renderAsVideoPreview?.pending || d.renderAsVideoFile?.pending);
+  const edited = d.engineClipUpdatedAt ? Date.parse(d.engineClipUpdatedAt) : 0;
+  const exported = d.renderAsVideoFile?.concludedAt ? Date.parse(d.renderAsVideoFile.concludedAt) : 0;
+  return {
+    headline: section ? overlayText(section) : opusHeadline,
+    headlineSource: section ? "overlay" : opusHeadline ? "opus" : null,
+    previewUrl: d.uriForPreview || null,
+    thumbnailUrl: d.uriForThumbnail || null,
+    exportUrl: d.uriForExport || null,
+    rendering,
+    // Clips never edited have no render job on record; their export is the original render.
+    exportCurrent: Boolean(d.uriForExport) && !rendering && (!d.renderAsVideoFile || exported >= edited),
+  };
 }
 
-const headlineCache = new Map<string, { at: number; headline: Promise<string | null> }>();
+const renderCache = new Map<string, { at: number; render: Promise<ClipRender> }>();
 
-/** getClipHeadline with a 5 minute cache, for page loads. Cleared when a headline is added. */
-export function getClipHeadlineCached(opusClipId: string) {
-  const hit = headlineCache.get(opusClipId);
-  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.headline;
-  const headline = getClipHeadline(opusClipId);
-  headlineCache.set(opusClipId, { at: Date.now(), headline });
-  headline.catch(() => headlineCache.delete(opusClipId));
-  return headline;
+/**
+ * getClipRender with a 60 second cache for page loads. A clip that's still rendering
+ * isn't cached, so the card's refresh sees the finished render right away. Edits clear it.
+ */
+export function getClipRenderCached(opusClipId: string) {
+  const hit = renderCache.get(opusClipId);
+  if (hit && Date.now() - hit.at < 60 * 1000) return hit.render;
+  const render = getClipRender(opusClipId);
+  renderCache.set(opusClipId, { at: Date.now(), render });
+  render.then(
+    (r) => {
+      if (r.rendering || !r.exportCurrent) renderCache.delete(opusClipId);
+    },
+    () => renderCache.delete(opusClipId),
+  );
+  return render;
+}
+
+/** Drops cached media and render state for a clip, after it's edited. */
+function forgetClip(opusClipId: string) {
+  renderCache.delete(opusClipId);
+  clipsCache.delete(opusClipId.split(".")[0]);
 }
 
 let idCounter = 0;
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}${(idCounter++).toString(36)}`;
 
+function textElements(text: string, window: object) {
+  return text.split(/\s+/).filter(Boolean).map((word) => ({ text: `${word} `, color: 0, ...window }));
+}
+
 /**
- * Builds the editing script with a headline added: a text overlay for the first few
- * seconds, styled like the brand template's Auto headline. Pure, so it can be checked
- * without saving anything.
+ * Builds the editing script with the headline set to text: the existing headline's text is
+ * replaced, or a new text overlay is added for the first few seconds, styled like the
+ * brand template's Auto headline. Pure, so it can be checked without saving anything.
  */
-export function withHeadline(detail: ClipDetail & { editingScript: { tracks: EditingTrack[] } }, text: string) {
+export function withHeadline(detail: ClipDetailWithScript, text: string) {
   const tracks = structuredClone(detail.editingScript.tracks);
+  const existing = findHeadlineSection(tracks);
+  if (existing) {
+    const content = existing.segments![0].content!;
+    const first = content.textElements?.[0] ?? {};
+    const window = { duration: first.duration, timeline: first.timeline ?? existing.sectionTimeline };
+    content.textElements = textElements(text, window);
+    return { ...detail.editingScript, tracks };
+  }
+
   const clipEndMs = Math.max(
     0,
     ...tracks.filter((t) => t.trackType === "KeyFrameTrack").flatMap((t) => (t.sections ?? []).map((s) => s.sectionTimeline?.out ?? 0)),
@@ -394,7 +474,7 @@ export function withHeadline(detail: ClipDetail & { editingScript: { tracks: Edi
         position: { type: "CPct", xPct: 0, yPct: 0.75, wPct: style.widthPct ?? 0.8, hPct: 0.2 },
         content: {
           id: newId("content"),
-          textElements: text.split(/\s+/).filter(Boolean).map((word) => ({ text: `${word} `, color: 0, ...window })),
+          textElements: textElements(text, window),
           textOverlayType: "paragraph",
           textStyle: {
             backgroundColor: style.backgroundColor ?? "#8000FFFF",
@@ -423,20 +503,46 @@ export function withHeadline(detail: ClipDetail & { editingScript: { tracks: Edi
 }
 
 /**
- * Adds a headline to a clip that has none and starts a re-render of its preview. Doesn't
- * use Opus credits. Refuses when the clip already opens with a headline.
+ * Sets a clip's headline (adding one if it has none) and starts a re-render of its preview
+ * and HD file. Doesn't use Opus credits. Refuses to touch a headline Opus generated outside
+ * the editing script, since that can't be edited through the API.
  */
-export async function addClipHeadline(opusClipId: string, text: string): Promise<void> {
-  if (!connected()) return;
+export async function setClipHeadline(opusClipId: string, text: string): Promise<void> {
+  if (!connected()) {
+    mockHeadlines.set(opusClipId, text);
+    return;
+  }
   const detail = await getClipDetail(opusClipId);
-  const existing = findHeadline(detail.editingScript.tracks);
-  if (existing) throw new Error(`This clip already has a headline: "${existing}".`);
+  const current = findHeadlineSection(detail.editingScript.tracks);
+  if (!current && detail.renderPref?.autoHookStyle?.headline) {
+    throw new Error(`This clip's headline was generated by Opus in a way the API can't edit: "${detail.renderPref.autoHookStyle.headline}".`);
+  }
+  if (current && overlayText(current) === text.replace(/\s+/g, " ").trim()) return;
   await fetchJson("OpusClip", `${BASE_URL}/exportable-clips/${encodeURIComponent(opusClipId)}/re-render`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ editingScript: withHeadline(detail, text) }),
   });
-  headlineCache.delete(opusClipId);
+  forgetClip(opusClipId);
+}
+
+/**
+ * Waits until the clip's preview and HD renders have finished and the HD file includes its
+ * latest edit. Re-renders usually take under a minute.
+ */
+export async function waitForRender(opusClipId: string, { timeoutMs = 4 * 60 * 1000, intervalMs = 5000 } = {}) {
+  const started = Date.now();
+  // Give Opus a moment to register a render that was just requested.
+  if (connected()) await new Promise((r) => setTimeout(r, Math.min(intervalMs, 3000)));
+  for (;;) {
+    const render = await getClipRender(opusClipId);
+    if (render.exportCurrent && !render.rendering) {
+      forgetClip(opusClipId);
+      return render;
+    }
+    if (Date.now() - started > timeoutMs) throw new Error("OpusClip is still rendering this clip. Try again in a few minutes.");
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
 }
 
 /** Exposed for checking an edit locally without saving it. */

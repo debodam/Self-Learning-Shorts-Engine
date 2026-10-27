@@ -4,7 +4,7 @@ import { rubricCategories, totalScore, type CandidateClip, type OpusMedia } from
 import { getLastScoringRun } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
-import { getClipHeadlineCached, listClipsCached, opusEditorUrl } from "@/lib/integrations/opus";
+import { getClipRenderCached, listClipsCached, opusEditorUrl } from "@/lib/integrations/opus";
 import { mockCandidateClips } from "@/lib/mock/candidate-clips";
 
 export type ReviewClips = {
@@ -137,18 +137,31 @@ export async function getUpcomingPosts(): Promise<UpcomingPost[]> {
 }
 
 /**
- * Fills in whether each of the week's picks has a headline in Opus. One request per pick
- * (at most 7, cached), so it's only done for picks. Picks that can't be checked stay unknown.
+ * Reads each of the week's picks live from Opus: its headline, render state, and fresh
+ * media links (so a re-rendered preview with the headline burned in shows right away).
+ * One request per pick (at most 7, briefly cached). Picks that can't be read keep the
+ * project-level media and stay unknown.
  */
-export async function withPickHeadlines(clips: CandidateClip[], weekId: string | null): Promise<CandidateClip[]> {
+export async function withPickRenders(clips: CandidateClip[], weekId: string | null): Promise<CandidateClip[]> {
   if (!weekId || !isIntegrationConnected("opus")) return clips;
   const picks = clips.filter((c) => c.picked && c.weekId === weekId && c.opusClipId);
-  const headlines = new Map(
-    await Promise.all(
-      picks.map(async (c) => [c.id, await getClipHeadlineCached(c.opusClipId!).catch(() => undefined)] as const),
-    ),
+  const renders = new Map(
+    await Promise.all(picks.map(async (c) => [c.id, await getClipRenderCached(c.opusClipId!).catch(() => null)] as const)),
   );
-  return clips.map((c) => (headlines.has(c.id) ? { ...c, headline: headlines.get(c.id) } : c));
+  return clips.map((c) => {
+    const r = renders.get(c.id);
+    if (!r) return c;
+    return {
+      ...c,
+      headline: r.headline,
+      render: { rendering: r.rendering, exportCurrent: r.exportCurrent, headlineSource: r.headlineSource },
+      opus: c.opus && {
+        ...c.opus,
+        previewUrl: r.previewUrl ?? c.opus.previewUrl,
+        thumbnailUrl: r.thumbnailUrl ?? c.opus.thumbnailUrl,
+      },
+    };
+  });
 }
 
 /** The most recent scoring run, or null before the first run or without Supabase. */
