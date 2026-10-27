@@ -1,5 +1,6 @@
 import { Play } from "lucide-react";
 import {
+  formatLabels,
   MAX_TOTAL_SCORE,
   platformLabels,
   rubricCategories,
@@ -13,8 +14,6 @@ const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
-
-const formatLabels = { mock: "Mock interview", conversational: "Conversational" };
 
 function formatDuration(seconds: number) {
   return `0:${String(seconds).padStart(2, "0")}`;

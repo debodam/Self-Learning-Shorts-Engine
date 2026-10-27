@@ -1,5 +1,10 @@
 export type ClipFormat = "mock" | "conversational";
 
+export const formatLabels: Record<ClipFormat, string> = {
+  mock: "Mock interview",
+  conversational: "Conversational",
+};
+
 export const rubricCategories = [
   "hook",
   "tension",
