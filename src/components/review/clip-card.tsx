@@ -39,9 +39,9 @@ export function ClipCard({
 
   return (
     <article
-      className={`flex flex-col overflow-hidden rounded-card border bg-surface transition-colors ${
-        approved ? "border-primary ring-1 ring-primary" : "border-line"
-      }`}
+      className={`flex flex-col overflow-hidden rounded-card border bg-surface transition ${
+        approved && !clip.posted ? "border-primary ring-1 ring-primary" : "border-line"
+      } ${clip.posted ? "opacity-50 hover:opacity-100" : ""}`}
     >
       <div className="relative flex aspect-video items-center justify-center bg-gradient-to-br from-primary-tint to-page">
         {playing && previewUrl ? (

@@ -14,6 +14,15 @@ export type ReviewClips = {
   unscoredCount: number;
 };
 
+/** When the clip was last posted and where, from its post rows. */
+function postedInfo(posts: { posted_at: string | null; status: string; platform: string }[]) {
+  const posted = posts.filter((p) => p.status === "posted" && p.posted_at);
+  const last = posted.map((p) => p.posted_at!).sort().at(-1) ?? null;
+  // Platforms from the latest round of posting (posts sent within a few minutes of it).
+  const recent = last ? posted.filter((p) => Date.parse(last) - Date.parse(p.posted_at!) < 10 * 60 * 1000) : [];
+  return { postedAt: last, postedTo: [...new Set(recent.map((p) => p.platform))] };
+}
+
 /** Higher total first, then by each rubric category in order. Opus's score never counts. */
 function byRubric(a: CandidateClip, b: CandidateClip) {
   const total = totalScore(b.scores!) - totalScore(a.scores!);
@@ -34,7 +43,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, caption, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, status)",
+      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, caption, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, posted_at, status, platform)",
     )
     // Cut clips are saved as rejected, picks saved for later as approved. Scheduled and
     // posted clips stay visible as part of their week's picks.
@@ -78,12 +87,12 @@ export async function getReviewClips(): Promise<ReviewClips> {
           : null,
       picked: row.picked,
       readyToSchedule: row.status === "approved",
-      // The earliest of the clip's scheduled posts (one per platform).
+      // The earliest of the clip's scheduled posts (one per platform), including a scheduled
+      // Post again on a clip that was already posted.
       scheduledFor:
-        row.status === "scheduled"
-          ? (row.posts.filter((p) => p.status === "scheduled" && p.scheduled_for).map((p) => p.scheduled_for!).sort()[0] ?? null)
-          : null,
+        row.posts.filter((p) => p.status === "scheduled" && p.scheduled_for).map((p) => p.scheduled_for!).sort()[0] ?? null,
       posted: row.status === "posted",
+      ...postedInfo(row.posts),
       weekId: row.source_videos.week_id,
       youtubeTitle: row.youtube_title,
       youtubeDescription: row.youtube_description,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Bookmark, CalendarCheck, CalendarClock, FlaskConical, PenLine, Send, X } from "lucide-react";
+import { Bookmark, CalendarCheck, CalendarClock, CheckCircle2, FlaskConical, PenLine, RotateCcw, Send, X } from "lucide-react";
 import { publishPicks, savePicks, writeCaptionsForPicks, type ScheduleResult } from "@/app/review/actions";
 import type { CandidateClip } from "@/lib/clips";
 import {
@@ -98,6 +98,8 @@ export function ScheduleDialog({
       ]),
     );
   });
+  // Posted clips the user chose to Post again. They post or schedule on their own, never in the batch.
+  const [reposting, setReposting] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<ScheduleResult | null>(null);
   const [pending, startTransition] = useTransition();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -107,9 +109,27 @@ export function ScheduleDialog({
   }, []);
 
   // A caption written after the preview opened (Write captions) shows if the box is empty.
+  const editable = picks.filter((c) => rows[c.id] && (open.includes(c) || reposting.has(c.id)));
   const rowsNow: Record<string, Row> = Object.fromEntries(
-    open.map((c) => [c.id, { ...rows[c.id], caption: rows[c.id].caption || c.caption || "" }]),
+    editable.map((c) => [c.id, { ...rows[c.id], caption: rows[c.id].caption || c.caption || "" }]),
   );
+
+  function postAgain(c: CandidateClip) {
+    setResult(null);
+    setRows((prev) => ({
+      ...prev,
+      [c.id]: prev[c.id] ?? { date: defaultDates(startDate)[0] ?? minDate, time: DEFAULT_POST_TIME, platforms: [...PLATFORMS], caption: c.caption ?? "" },
+    }));
+    setReposting((prev) => new Set(prev).add(c.id));
+  }
+
+  function keepPosted(c: CandidateClip) {
+    setReposting((prev) => {
+      const next = new Set(prev);
+      next.delete(c.id);
+      return next;
+    });
+  }
 
   const update = (id: string, patch: Partial<Row>) => setRows((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
@@ -134,6 +154,7 @@ export function ScheduleDialog({
       platforms: row.platforms,
       publishAt: postNow ? null : (easternToUtc(row.date, row.time)?.toISOString() ?? ""),
       caption: row.caption,
+      repost: reposting.has(c.id),
     };
   };
 
@@ -146,9 +167,10 @@ export function ScheduleDialog({
   };
 
   function send(clips: CandidateClip[], postNow: boolean) {
+    const again = clips.some((c) => reposting.has(c.id)) ? " It was already posted, so this posts it again." : "";
     const intro = postNow
-      ? "Post this clip publicly right now?"
-      : `Schedule ${clips.length} ${clips.length === 1 ? "clip" : "clips"} to post publicly?`;
+      ? `Post this clip publicly right now?${again}`
+      : `Schedule ${clips.length} ${clips.length === 1 ? "clip" : "clips"} to post publicly?${again}`;
     if (!window.confirm(`${intro}\n\n${clips.map((c) => describe(c, postNow)).join("\n\n")}`)) return;
     setResult(null);
     startTransition(async () => {
@@ -224,22 +246,61 @@ export function ScheduleDialog({
 
       <ol className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
         {picks.map((clip) => {
-          if (clip.scheduledFor || clip.posted) {
+          const title = (clip.caption && firstLine(clip.caption)) || clip.youtubeTitle || clip.title;
+          if (clip.posted && !reposting.has(clip.id)) {
+            const where = (clip.postedTo ?? []).map((p) => PLATFORM_LABELS[p as PlatformKey] ?? p).join(", ");
+            return (
+              // Out of the rotation: grayed out, with Post again on hover or keyboard focus.
+              <li key={clip.id} className="group relative flex items-center justify-between gap-3 bg-page/60 px-6 py-4">
+                <div className="min-w-0 opacity-50 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                  <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-emerald-700">
+                    <CheckCircle2 className="size-3.5" />
+                    Posted{clip.postedAt ? ` ${slotFormat.format(new Date(clip.postedAt))}` : ""}
+                    {where ? ` to ${where}` : ""}
+                  </p>
+                  <p className="text-sm font-medium text-heading">{title}</p>
+                  {clip.scheduledFor && (
+                    <p className="text-xs text-muted">Posting again {slotFormat.format(new Date(clip.scheduledFor))}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => postAgain(clip)}
+                  disabled={pending || Boolean(clip.scheduledFor)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-body opacity-0 transition-opacity hover:bg-page focus:opacity-100 group-hover:opacity-100 disabled:hidden"
+                >
+                  <RotateCcw className="size-3.5" />
+                  Post again
+                </button>
+              </li>
+            );
+          }
+          if (clip.scheduledFor && !clip.posted) {
             return (
               <li key={clip.id} className="flex flex-col gap-1 bg-page/60 px-6 py-4">
                 <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-emerald-700">
                   <CalendarCheck className="size-3.5" />
-                  {clip.posted ? "Posted" : `Scheduled from ${slotFormat.format(new Date(clip.scheduledFor!))}`}
+                  Scheduled from {slotFormat.format(new Date(clip.scheduledFor))}
                 </p>
-                <p className="text-sm font-medium text-heading">{(clip.caption && firstLine(clip.caption)) || clip.youtubeTitle || clip.title}</p>
+                <p className="text-sm font-medium text-heading">{title}</p>
               </li>
             );
           }
           const row = rowsNow[clip.id];
           const at = easternToUtc(row.date, row.time);
           const postNowIssues = rowIssues(row, true);
+          const again = reposting.has(clip.id);
           return (
-            <li key={clip.id} className="flex flex-col gap-3 px-6 py-4">
+            <li key={clip.id} className={`flex flex-col gap-3 px-6 py-4 ${again ? "bg-primary-tint/40" : ""}`}>
+              {again && (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded-full bg-primary-tint px-2 py-0.5 font-medium text-primary">Posting again</span>
+                  <span className="text-muted">Already posted. Post it now or schedule it on its own; it isn&apos;t part of the batch.</span>
+                  <button type="button" onClick={() => keepPosted(clip)} disabled={pending} className="ml-auto font-medium text-muted hover:text-body hover:underline">
+                    Keep as posted
+                  </button>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="date"
@@ -272,6 +333,18 @@ export function ScheduleDialog({
                   <Send className="size-3.5" />
                   Post now
                 </button>
+                {again && (
+                  <button
+                    type="button"
+                    onClick={() => send([clip], false)}
+                    disabled={pending || blocked || rowIssues(row, false).length > 0 || Boolean(clip.render && !clip.headline)}
+                    title={rowIssues(row, false).join(" ") || "Schedule this clip again for the date and time above"}
+                    className="flex items-center gap-1.5 rounded-lg border border-primary px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary-tint disabled:cursor-not-allowed disabled:border-line disabled:text-muted"
+                  >
+                    <CalendarClock className="size-3.5" />
+                    Schedule this clip
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-4 text-sm">

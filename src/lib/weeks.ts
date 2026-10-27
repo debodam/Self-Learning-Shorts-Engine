@@ -399,6 +399,8 @@ export type PostItem = {
   platforms: PostPlatform[];
   publishAt: string | null;
   caption: string;
+  /** The clip was already posted and the user chose Post again. */
+  repost?: boolean;
 };
 
 const CAPTION_MAX = 2200;
@@ -459,11 +461,19 @@ async function saveText(db: Db, items: ReturnType<typeof cleanItem>[]) {
   }
 }
 
-/** Checks the items are unscheduled picks from this week and returns them cleaned up. */
+/**
+ * Checks the items are this week's picks that can be posted: unscheduled ones, or posted
+ * ones the user chose to Post again. Returns them cleaned up.
+ */
 async function checkItems(db: Db, weekId: string, items: PostItem[]) {
   const picks = await loadPicks(db, weekId);
-  const open = new Map(picks.filter((p) => p.status === "candidate" || p.status === "approved").map((p) => [p.id, p]));
+  const reposts = new Set(items.filter((i) => i.repost === true).map((i) => i.clipId));
+  const open = new Map(
+    picks.filter((p) => p.status === "candidate" || p.status === "approved" || (p.status === "posted" && reposts.has(p.id))).map((p) => [p.id, p]),
+  );
   if (items.length === 0) throw new Error("Nothing to post.");
+  const alreadyPosted = items.filter((i) => !i.repost && picks.some((p) => p.id === i.clipId && p.status === "posted"));
+  if (alreadyPosted.length) throw new Error("That clip was already posted. Use Post again to post it a second time.");
   if (new Set(items.map((i) => i.clipId)).size !== items.length || items.some((i) => !open.has(i.clipId))) {
     throw new Error("The picks changed since the preview opened. Close it and try again.");
   }
@@ -503,6 +513,18 @@ export async function publishClips(db: Db, weekId: string, items: PostItem[]) {
   const issues = cleaned.flatMap((item) => itemIssues(item, `"${captionTitle(item.caption) || open.get(item.clipId)!.title}"`));
   if (issues.length) throw new Error(`${issues.join(". ")}.`);
 
+  // One scheduled post per clip and platform: catch it here, before anything reaches Opus.
+  const { data: pendingPosts, error: pendingError } = await db
+    .from("posts")
+    .select("clip_id, platform")
+    .eq("status", "scheduled")
+    .in("clip_id", cleaned.map((i) => i.clipId));
+  if (pendingError) throw new Error(`Failed to check scheduled posts: ${pendingError.message}`);
+  const clash = cleaned.flatMap((i) =>
+    i.platforms.filter((p) => pendingPosts.some((x) => x.clip_id === i.clipId && x.platform === p)).map((p) => `"${captionTitle(i.caption)}" on ${ACCOUNT_RULES[p].label}`),
+  );
+  if (clash.length) throw new Error(`Already scheduled: ${clash.join(", ")}. Cancel that post on the Schedule page first.`);
+
   // Save the preview's text first, so edits are kept even if posting fails.
   await saveText(db, cleaned);
   const accounts = await resolvePostAccounts();
@@ -531,9 +553,9 @@ export async function publishClips(db: Db, weekId: string, items: PostItem[]) {
           ? (await schedulePost({ ...post, publishAt: new Date(item.publishAt) })).scheduleId
           : (await postNow(post)).postId;
         // Record each post as soon as Opus accepts it, so a later failure doesn't lose track.
-        // Upsert, since a clip whose post was canceled already has a row for that platform.
+        // A new row every time, so earlier and canceled posts stay in the history.
         const now = new Date().toISOString();
-        const { error: postError } = await db.from("posts").upsert(
+        const { error: postError } = await db.from("posts").insert(
           {
             clip_id: item.clipId,
             platform,
@@ -544,14 +566,14 @@ export async function publishClips(db: Db, weekId: string, items: PostItem[]) {
             account_name: account.name,
             status: item.publishAt ? "scheduled" : "posted",
           },
-          { onConflict: "clip_id,platform" },
         );
         if (postError) throw new Error(`Sent "${title}" to ${account.platformLabel} (${opusId}) but couldn't save it: ${postError.message}.`);
         published.push({ clipId: item.clipId, title, platform, account: `${account.platformLabel} ${account.handle}`, publishAt: item.publishAt, opusId });
         // Opus allows one posting request per second.
         await pause(1100);
       }
-      const { error: clipError } = await db.from("clips").update({ status: item.publishAt ? "scheduled" : "posted" }).eq("id", item.clipId);
+      const status = item.publishAt && !item.repost ? "scheduled" : "posted";
+      const { error: clipError } = await db.from("clips").update({ status }).eq("id", item.clipId);
       if (clipError) throw new Error(`Posted "${captionTitle(item.caption)}" but couldn't update the clip: ${clipError.message}`);
     }
   } catch (error) {

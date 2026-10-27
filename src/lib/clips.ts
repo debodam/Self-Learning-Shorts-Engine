@@ -88,8 +88,11 @@ export type CandidateClip = {
   youtubeDescription?: string | null;
   /** The one caption posted to YouTube, TikTok, and Instagram. Its first line is the title. */
   caption?: string | null;
-  /** Posted right away (Post now) rather than scheduled. */
+  /** Already posted (Post now). Out of the posting rotation unless the user chooses Post again. */
   posted?: boolean;
+  /** When the clip was last posted, and to which platforms. */
+  postedAt?: string | null;
+  postedTo?: string[];
   transcript?: string | null;
   /** Missing for clips that didn't come from Opus, or when Opus couldn't be reached. */
   opus?: OpusMedia;

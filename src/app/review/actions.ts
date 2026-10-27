@@ -165,7 +165,8 @@ const validItems = (items: unknown): items is PostItem[] =>
       Array.isArray(i.platforms) &&
       i.platforms.every((p: unknown) => typeof p === "string" && PLATFORM_SET.has(p)) &&
       (i.publishAt === null || typeof i.publishAt === "string") &&
-      typeof i.caption === "string",
+      typeof i.caption === "string" &&
+      (i.repost === undefined || typeof i.repost === "boolean"),
   );
 
 /**

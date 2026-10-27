@@ -47,12 +47,16 @@ export function ReviewBoard({
 
   const picks = clips.filter((c) => c.picked && c.weekId === currentWeekId && currentWeekId);
   const pickCount = picks.length;
-  const overTarget = pickCount > WEEKLY_APPROVAL_TARGET;
   const unscheduledCount = picks.filter((c) => !c.scheduledFor && !c.posted).length;
+  const postedCount = picks.filter((c) => c.posted).length;
+  const scheduledCount = picks.filter((c) => c.scheduledFor && !c.posted).length;
+  const overTarget = pickCount > WEEKLY_APPROVAL_TARGET;
+
   // Every unscheduled pick needs a headline in the video before it can be scheduled.
   // Picks Opus couldn't be checked for (render unknown) are left to the server's check.
   const missingHeadlines = picks.filter((c) => !c.scheduledFor && !c.posted && c.render && !c.headline);
-  const canSchedule = pickCount === WEEKLY_APPROVAL_TARGET && unscheduledCount > 0 && missingHeadlines.length === 0;
+  // Opens the preview to schedule the rest, or to Post again once everything has gone out.
+  const canSchedule = pickCount === WEEKLY_APPROVAL_TARGET && (unscheduledCount > 0 || postedCount > 0) && missingHeadlines.length === 0;
 
   function addMissing() {
     if (!currentWeekId) return;
@@ -92,9 +96,9 @@ export function ReviewBoard({
   if (pickCount === WEEKLY_APPROVAL_TARGET) {
     hint =
       unscheduledCount === 0
-        ? "All 7 are scheduled. See the Schedule page."
+        ? "All 7 are posted or scheduled. See the Schedule page."
         : unscheduledCount < pickCount
-          ? `${pickCount - unscheduledCount} scheduled, ${unscheduledCount} to go.`
+          ? `${[postedCount && `${postedCount} posted`, scheduledCount && `${scheduledCount} scheduled`].filter(Boolean).join(", ")}. Schedule the other ${unscheduledCount} whenever you're ready.`
           : picks.every((c) => c.readyToSchedule)
             ? "Saved as Ready to schedule. Open Schedule to pick a start date."
             : "One per day at 12pm Eastern on YouTube from the start date you pick.";
@@ -130,7 +134,7 @@ export function ReviewBoard({
             className="flex shrink-0 items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
           >
             <CalendarClock className="size-4" />
-            Schedule
+            {unscheduledCount > 0 && unscheduledCount < pickCount ? `Schedule the other ${unscheduledCount}` : "Schedule"}
           </button>
         </div>
         {missingHeadlines.length > 0 && (
