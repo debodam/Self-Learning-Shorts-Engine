@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import { ArrowRightLeft, CheckCircle2, MessageSquareText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { LoadingCard } from "@/components/loading-card";
 import { PageHeader } from "@/components/page-header";
-import { mockWeeklyLearnings } from "@/lib/mock/weekly-learnings";
+import { getWeeklyLearnings } from "@/lib/db";
 
 const dayFormat = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -26,36 +28,52 @@ export default function LearningsPage() {
         title="Learnings"
         description="What the agent learned from each week of results and how it changed the next shortlist."
       />
-      <ol className="flex flex-col gap-5">
-        {mockWeeklyLearnings.map((entry, i) => (
-          <li key={entry.id} className="rounded-card border border-line bg-surface p-6">
-            <div className="mb-5 flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-heading">
-                Week of {formatWeek(entry.weekStart, entry.weekEnd)}
-              </h2>
-              {i === 0 && (
-                <span className="rounded-full bg-primary-tint px-2.5 py-0.5 text-xs font-medium text-primary">
-                  Latest
-                </span>
-              )}
-            </div>
-            <div className="grid gap-6 md:grid-cols-2">
-              <Section icon={CheckCircle2} title="What worked">
-                <BulletList items={entry.whatWorked} />
-              </Section>
-              <Section icon={ArrowRightLeft} title="What changed">
-                <BulletList items={entry.whatChanged} />
-              </Section>
-            </div>
-            <div className="mt-6 rounded-lg bg-page p-4">
-              <Section icon={MessageSquareText} title="Why">
-                <p className="text-sm leading-relaxed text-body">{entry.why}</p>
-              </Section>
-            </div>
-          </li>
-        ))}
-      </ol>
+      <Suspense fallback={<LoadingCard className="h-80" />}>
+        <LearningsList />
+      </Suspense>
     </>
+  );
+}
+
+async function LearningsList() {
+  const learnings = await getWeeklyLearnings();
+  if (learnings.length === 0) {
+    return (
+      <p className="rounded-card border border-line bg-surface p-6 text-muted">
+        No weekly reports yet. The first one appears after a full week of posts.
+      </p>
+    );
+  }
+  return (
+    <ol className="flex flex-col gap-5">
+      {learnings.map((entry, i) => (
+        <li key={entry.id} className="rounded-card border border-line bg-surface p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-heading">
+              Week of {formatWeek(entry.weekStart, entry.weekEnd)}
+            </h2>
+            {i === 0 && (
+              <span className="rounded-full bg-primary-tint px-2.5 py-0.5 text-xs font-medium text-primary">
+                Latest
+              </span>
+            )}
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            <Section icon={CheckCircle2} title="What worked">
+              <BulletList items={entry.whatWorked} />
+            </Section>
+            <Section icon={ArrowRightLeft} title="What changed">
+              <BulletList items={entry.whatChanged} />
+            </Section>
+          </div>
+          <div className="mt-6 rounded-lg bg-page p-4">
+            <Section icon={MessageSquareText} title="Why">
+              <p className="text-sm leading-relaxed text-body">{entry.why}</p>
+            </Section>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 

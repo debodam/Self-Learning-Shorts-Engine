@@ -4,7 +4,7 @@ import { useState } from "react";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { SegmentedControl } from "@/components/segmented-control";
 import { formatLabels, platformLabels, type ClipFormat, type Platform } from "@/lib/clips";
-import { splitWeeks, totalViews, type PostedClip } from "@/lib/performance";
+import { splitWeeks, totalViews, type PlatformMetrics, type PostedClip } from "@/lib/performance";
 
 const platforms = Object.keys(platformLabels) as Platform[];
 
@@ -154,17 +154,9 @@ export function PerformanceDashboard({ clips }: { clips: PostedClip[] }) {
                       {formatLabels[clip.format]}
                     </span>
                   </td>
-                  {visiblePlatforms.map((platform) => {
-                    const m = clip.metrics[platform];
-                    return (
-                      <MetricCells
-                        key={platform}
-                        views={m.views}
-                        watched={m.avgPercentWatched}
-                        shares={m.shares}
-                      />
-                    );
-                  })}
+                  {visiblePlatforms.map((platform) => (
+                    <MetricCells key={platform} metrics={clip.metrics[platform]} />
+                  ))}
                 </tr>
               ))}
               {visibleClips.length === 0 && (
@@ -192,14 +184,21 @@ function MetricHeaders() {
   );
 }
 
-function MetricCells({ views, watched, shares }: { views: number; watched: number; shares: number }) {
+function MetricCells({ metrics }: { metrics: PlatformMetrics | undefined }) {
+  if (!metrics) {
+    return (
+      <td colSpan={3} className="border-l border-line px-3 py-3 text-center text-xs text-muted">
+        No data
+      </td>
+    );
+  }
   return (
     <>
       <td className="border-l border-line px-3 py-3 text-right font-medium tabular-nums text-heading">
-        {fullNumber.format(views)}
+        {fullNumber.format(metrics.views)}
       </td>
-      <td className="px-3 py-3 text-right tabular-nums">{watched}%</td>
-      <td className="px-3 py-3 text-right tabular-nums">{fullNumber.format(shares)}</td>
+      <td className="px-3 py-3 text-right tabular-nums">{metrics.avgPercentWatched}%</td>
+      <td className="px-3 py-3 text-right tabular-nums">{fullNumber.format(metrics.shares)}</td>
     </>
   );
 }

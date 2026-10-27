@@ -36,11 +36,12 @@ export type CandidateClip = {
   title: string;
   sourceVideo: string;
   format: ClipFormat;
-  durationSeconds: number;
+  /** Null until clip length is stored (not yet in the schema). */
+  durationSeconds: number | null;
   /** Each score is 1 to 5. */
   scores: Record<RubricCategory, number>;
-  /** Predicted views in the first 7 days. */
-  predictedViews: Record<Platform, number>;
+  /** Predicted views in the first 7 days. Null until the agent predicts them. */
+  predictedViews: Record<Platform, number> | null;
 };
 
 export const WEEKLY_APPROVAL_TARGET = 7;

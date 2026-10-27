@@ -13,7 +13,8 @@ export type PostedClip = {
   format: ClipFormat;
   /** ISO timestamp. Clips go out at 12pm Eastern on all three platforms. */
   postedAt: string;
-  metrics: Record<Platform, PlatformMetrics>;
+  /** A platform is missing when the clip wasn't posted there or has no metrics yet. */
+  metrics: Partial<Record<Platform, PlatformMetrics>>;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -38,5 +39,5 @@ export function splitWeeks(clips: PostedClip[]) {
 }
 
 export function totalViews(clips: PostedClip[], platform: Platform) {
-  return clips.reduce((sum, c) => sum + c.metrics[platform].views, 0);
+  return clips.reduce((sum, c) => sum + (c.metrics[platform]?.views ?? 0), 0);
 }

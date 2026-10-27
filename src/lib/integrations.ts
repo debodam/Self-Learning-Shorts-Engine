@@ -52,3 +52,9 @@ export function integrationStatus(integration: Integration) {
   const missing = integration.envVars.filter((name) => !process.env[name]?.trim());
   return { connected: missing.length === 0, missing };
 }
+
+export function isIntegrationConnected(id: string) {
+  const integration = integrations.find((i) => i.id === id);
+  if (!integration) throw new Error(`Unknown integration: ${id}`);
+  return integrationStatus(integration).connected;
+}

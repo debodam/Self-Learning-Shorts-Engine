@@ -38,9 +38,11 @@ export function ClipCard({
         <span className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <Play className="ml-0.5 size-4" fill="currentColor" />
         </span>
-        <span className="absolute bottom-2 right-2 rounded bg-heading/75 px-1.5 py-0.5 text-xs font-medium text-white">
-          {formatDuration(clip.durationSeconds)}
-        </span>
+        {clip.durationSeconds !== null && (
+          <span className="absolute bottom-2 right-2 rounded bg-heading/75 px-1.5 py-0.5 text-xs font-medium text-white">
+            {formatDuration(clip.durationSeconds)}
+          </span>
+        )}
         <span className="absolute left-2 top-2 rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-body">
           {formatLabels[clip.format]}
         </span>
@@ -79,16 +81,20 @@ export function ClipCard({
           <span className="text-xs font-medium uppercase tracking-wide text-muted">
             Predicted views, 7 days
           </span>
-          <dl className="mt-2 grid grid-cols-3 gap-1.5">
-            {(Object.keys(platformLabels) as Platform[]).map((platform) => (
-              <div key={platform}>
-                <dt className="text-[11px] text-muted">{platformLabels[platform]}</dt>
-                <dd className="text-sm font-semibold text-heading">
-                  {compactNumber.format(clip.predictedViews[platform])}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          {clip.predictedViews ? (
+            <dl className="mt-2 grid grid-cols-3 gap-1.5">
+              {(Object.keys(platformLabels) as Platform[]).map((platform) => (
+                <div key={platform}>
+                  <dt className="text-[11px] text-muted">{platformLabels[platform]}</dt>
+                  <dd className="text-sm font-semibold text-heading">
+                    {compactNumber.format(clip.predictedViews![platform])}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="mt-2 text-sm text-muted">Not predicted yet</p>
+          )}
         </div>
 
         <label className="mt-auto flex cursor-pointer items-center justify-between border-t border-line pt-3">
