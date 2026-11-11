@@ -12,7 +12,7 @@ export default function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description="Integrations are configured with environment variables in .env.local. Anything not connected uses mock data. YouTube metrics come in Phase 2, Instagram and TikTok in Phase 3."
+        description="Integrations are configured with environment variables in .env.local. Anything not connected uses mock data. YouTube metrics use a public Data API key. Instagram and TikTok metrics come later."
       />
       <Suspense fallback={<IntegrationsSkeleton />}>
         <IntegrationsList />

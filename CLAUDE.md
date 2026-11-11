@@ -2,11 +2,13 @@
 
 ## Project
 
-Aced Shorts Engine V2. An internal dashboard plus agent that turns Aced's long-form YouTube videos into Shorts for YouTube, TikTok, and Instagram using the OpusClip API. A Claude agent scores clips, writes titles and captions, schedules approved clips, pulls performance metrics from all three platforms, and learns weekly from results using a RAG over past clips.
+Aced Shorts Engine V2. An internal dashboard plus agent that turns Aced's long-form YouTube videos into Shorts for YouTube, TikTok, and Instagram using the OpusClip API. A Claude agent scores clips, writes titles and captions, schedules approved clips, pulls performance metrics (YouTube first), and learns from results to score better over time.
 
 ## Scope
 
-MVP 1 (the Generator) is the current focus. Build for it, and keep later phases out of the UI until their phase starts: their code and integration stubs can stay, but pages show "Coming in Phase 2" and settings only list what MVP 1 uses.
+MVP 2 (YouTube metrics and a self-learning scoring loop) is the current focus, on top of the finished MVP 1 Generator. MVP 2 is YouTube only: Instagram and TikTok metrics are out of scope. Keep later phases out of the UI until their phase starts: their code and integration stubs can stay, but pages show a "Coming later" placeholder and settings only list what MVP 1 and MVP 2 use.
+
+YouTube metrics come from a plain Data API v3 key (`YOUTUBE_API_KEY`, public data only, no OAuth) for the Aced channel `YOUTUBE_CHANNEL_ID` (@aced_io, never Ace Your Interviews). That gives views, likes, and comments. It does not give retention or subscribers gained, so don't build anything that needs them. A Short is a video 3 minutes or under. Batch video IDs 50 per call to keep quota low.
 
 ## Users
 
@@ -18,9 +20,9 @@ Single-user auth for now. More teammates may be added later, so don't hardcode a
 - Supabase (Postgres + pgvector)
 - Claude API
 - OpusClip REST API (https://api.opus.pro)
-- YouTube Data + Analytics APIs
-- Instagram Graph API (Phase 3 metrics, stub only for now; posting goes through OpusClip in MVP 1)
-- TikTok API (Phase 3 metrics, stub only for now; posting goes through OpusClip in MVP 1)
+- YouTube Data API v3 (API key, public metrics; Analytics needs OAuth and isn't used yet)
+- Instagram Graph API (later-phase metrics, stub only for now; posting goes through OpusClip in MVP 1)
+- TikTok API (later-phase metrics, stub only for now; posting goes through OpusClip in MVP 1)
 - GitHub Actions
 - Vercel
 
@@ -60,7 +62,6 @@ Every clip needs a headline baked into the video before it's scheduled or posted
 
 ## Phases
 
-1. **MVP 1: Generator (current focus).** Submit 2 YouTube links, OpusClip clips them, the agent scores them, the top 7 are highlighted, and they're posted through OpusClip to YouTube (Exponent channel), TikTok, and Instagram (Aced accounts), with one caption per clip used on all three. See Weekly flow.
-2. **Phase 2:** YouTube metrics, V1 data import, Vercel deploy, login, GitHub Actions routines.
-3. **Phase 3:** Instagram and TikTok metrics and their own APIs. (Posting to them through OpusClip is already part of MVP 1.)
-4. **Phase 4:** RAG, similar-clip retrieval, weekly learnings.
+1. **MVP 1: Generator (done).** Submit 2 YouTube links, OpusClip clips them, the agent scores them, the top 7 are highlighted, and they're posted through OpusClip to YouTube (Exponent channel), TikTok, and Instagram (Aced accounts), with one caption per clip used on all three. See Weekly flow.
+2. **MVP 2: YouTube metrics and self-learning scoring (current focus).** YouTube only. Backfill every Short on the channel, save a timestamped snapshot on each metrics pull, compute views at 48 hours and 7 days after publish so Shorts posted on different days compare fairly, link the Shorts we posted to their YouTube video IDs, and show it all on the Performance page. Then a self-learning loop that uses those results to improve clip scoring.
+3. **Later:** V1 data import, Vercel deploy, login, scheduled GitHub Actions routines, Instagram and TikTok metrics and their own APIs (posting to them through OpusClip is already part of MVP 1), RAG and similar-clip retrieval.

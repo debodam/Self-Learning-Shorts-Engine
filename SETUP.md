@@ -59,12 +59,11 @@ Notes:
 
 | Key | Where to get it | Current account | Moves to |
 | --- | --- | --- | --- |
-| `YOUTUBE_CLIENT_ID` | [Google Cloud Console](https://console.cloud.google.com): create or pick a project, enable **YouTube Data API v3** and **YouTube Analytics API**, set up the OAuth consent screen, then **APIs & Services > Credentials > Create credentials > OAuth client ID** | _fill in_ | Aced's Google Cloud project |
-| `YOUTUBE_CLIENT_SECRET` | Same OAuth client | _fill in_ | Aced's Google Cloud project |
-| `YOUTUBE_REFRESH_TOKEN` | Authorize the OAuth client as an owner or manager of the Aced channel with offline access and the scopes `https://www.googleapis.com/auth/youtube.readonly` and `https://www.googleapis.com/auth/yt-analytics.readonly`. The [OAuth 2.0 Playground](https://developers.google.com/oauthplayground) works: use your own client credentials in its settings. | _fill in_ (the Google account that authorized) | A Google account on Aced's side with access to the channel |
-| `YOUTUBE_CHANNEL_ID` | YouTube Studio > **Settings > Channel > Advanced settings**, or [youtube.com/account_advanced](https://www.youtube.com/account_advanced). Starts with `UC`. | Aced YouTube channel | Unchanged unless the channel changes |
+| `YOUTUBE_API_KEY` | [Google Cloud Console](https://console.cloud.google.com): create or pick a project, enable **YouTube Data API v3**, then **APIs & Services > Credentials > Create credentials > API key**. Restrict it to the YouTube Data API v3. Public data only: views, likes, and comments. A full pull costs about 35 of the 10,000 daily quota units. | _fill in_ | Aced's Google Cloud project |
+| `YOUTUBE_CHANNEL_ID` | The Aced channel, @aced_io: `UCjm_qVkCPjOVDz9BWjNqO9A`. Never Ace Your Interviews. | Aced YouTube channel | Unchanged unless the channel changes |
+| `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` | Not used yet. An OAuth client authorized by a channel owner, with **YouTube Analytics API** enabled and the scopes `youtube.readonly` and `yt-analytics.readonly`, would add retention and subscribers gained later. | _not set_ | Aced's Google Cloud project |
 
-Notes:
+Notes for the OAuth client, if it's added later:
 - While the OAuth consent screen is in **Testing**, refresh tokens expire after 7 days. Publish the app (internal or production) before relying on the token.
 - The refresh token is tied to the Google account that authorized it. If that person loses access to the channel, the token stops working.
 

@@ -36,8 +36,8 @@ export const integrations: Integration[] = [
     id: "youtube",
     phase: 2,
     name: "YouTube",
-    description: "Data and Analytics APIs for source videos, Shorts posting, and metrics.",
-    envVars: ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN", "YOUTUBE_CHANNEL_ID"],
+    description: "Data API key for public Shorts metrics on the Aced channel: views, likes, and comments.",
+    envVars: ["YOUTUBE_API_KEY", "YOUTUBE_CHANNEL_ID"],
   },
   {
     id: "instagram",

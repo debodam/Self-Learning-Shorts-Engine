@@ -265,6 +265,7 @@ export type Database = {
           scheduled_for: string | null
           status: Database["public"]["Enums"]["post_status"]
           account_name: string | null
+          match_note: string | null
         }
         Insert: {
           caption?: string | null
@@ -277,6 +278,7 @@ export type Database = {
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["post_status"]
           account_name?: string | null
+          match_note?: string | null
         }
         Update: {
           caption?: string | null
@@ -289,6 +291,7 @@ export type Database = {
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["post_status"]
           account_name?: string | null
+          match_note?: string | null
         }
         Relationships: [
           {
@@ -364,6 +367,103 @@ export type Database = {
           starts_on?: string
         }
         Relationships: []
+      }
+      youtube_short_snapshots: {
+        Row: {
+          captured_at: string
+          comments: number | null
+          id: string
+          likes: number | null
+          video_id: string
+          views: number
+        }
+        Insert: {
+          captured_at?: string
+          comments?: number | null
+          id?: string
+          likes?: number | null
+          video_id: string
+          views: number
+        }
+        Update: {
+          captured_at?: string
+          comments?: number | null
+          id?: string
+          likes?: number | null
+          video_id?: string
+          views?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "youtube_short_snapshots_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "youtube_shorts"
+            referencedColumns: ["video_id"]
+          },
+        ]
+      }
+      youtube_shorts: {
+        Row: {
+          comments: number | null
+          created_at: string
+          description: string
+          duration_seconds: number
+          format: Database["public"]["Enums"]["clip_format"] | null
+          format_guessed: boolean
+          last_pulled_at: string
+          likes: number | null
+          post_id: string | null
+          published_at: string
+          title: string
+          video_id: string
+          views: number
+          views_48h: number | null
+          views_7d: number | null
+        }
+        Insert: {
+          comments?: number | null
+          created_at?: string
+          description?: string
+          duration_seconds: number
+          format?: Database["public"]["Enums"]["clip_format"] | null
+          format_guessed?: boolean
+          last_pulled_at?: string
+          likes?: number | null
+          post_id?: string | null
+          published_at: string
+          title: string
+          video_id: string
+          views?: number
+          views_48h?: number | null
+          views_7d?: number | null
+        }
+        Update: {
+          comments?: number | null
+          created_at?: string
+          description?: string
+          duration_seconds?: number
+          format?: Database["public"]["Enums"]["clip_format"] | null
+          format_guessed?: boolean
+          last_pulled_at?: string
+          likes?: number | null
+          post_id?: string | null
+          published_at?: string
+          title?: string
+          video_id?: string
+          views?: number
+          views_48h?: number | null
+          views_7d?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "youtube_shorts_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: true
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

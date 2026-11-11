@@ -55,7 +55,7 @@ Three GitHub Actions workflows, manual trigger only for now (**Actions > workflo
 | Workflow | What it does | Run locally |
 | --- | --- | --- |
 | Weekly candidates | Finds new long-form uploads, submits them to OpusClip, imports finished clips, and scores them with the agent | `npm run job:weekly-candidates` |
-| Metrics pull | Saves a metrics snapshot for every post it can match on YouTube, TikTok, and Instagram | `npm run job:metrics-pull` |
+| Metrics pull | Saves every Short on the Aced YouTube channel with a views, likes, and comments snapshot, and links the ones we posted (same as Pull metrics now) | `npm run job:metrics-pull` |
 | Weekly learnings | Compares predicted and actual views for last week's posts and writes the learnings entry | `npm run job:weekly-learnings` |
 
 Add `-- --dry-run` (or tick **Dry run** in Actions) to read everything and write nothing. Without Supabase keys every run is a dry run. Keys and where they come from are in [SETUP.md](SETUP.md).

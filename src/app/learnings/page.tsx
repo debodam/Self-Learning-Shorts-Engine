@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/empty-state";
 import { LoadingCard } from "@/components/loading-card";
 import { PageHeader } from "@/components/page-header";
 import { getWeeklyLearnings } from "@/lib/db";
-import { PHASE_2_LIVE } from "@/lib/phases";
+import { LEARNING_LOOP_LIVE } from "@/lib/phases";
 
 const dayFormat = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -30,13 +30,14 @@ export default function LearningsPage() {
         title="Learnings"
         description="What the agent learned from each week of results and how it changed the next shortlist."
       />
-      {PHASE_2_LIVE ? (
+      {LEARNING_LOOP_LIVE ? (
         <Suspense fallback={<LoadingCard className="h-80" />}>
           <LearningsList />
         </Suspense>
       ) : (
-        <EmptyState icon={Clock} title="Coming in Phase 2">
-          Weekly learnings need real performance data first. They come after YouTube metrics land in Phase 2.
+        <EmptyState icon={Clock} title="Coming later in MVP 2">
+          The self-learning scoring loop compares each clip&apos;s scores with its YouTube views and adjusts the rubric.
+          It starts once enough of our Shorts have 7-day views.
         </EmptyState>
       )}
     </>
