@@ -773,6 +773,27 @@ export type Database = {
         }
         Relationships: []
       }
+      login_attempts: {
+        Row: {
+          ip_hash: string
+          failures: number
+          last_failed_at: string | null
+          locked_until: string | null
+        }
+        Insert: {
+          ip_hash: string
+          failures?: number
+          last_failed_at?: string | null
+          locked_until?: string | null
+        }
+        Update: {
+          ip_hash?: string
+          failures?: number
+          last_failed_at?: string | null
+          locked_until?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

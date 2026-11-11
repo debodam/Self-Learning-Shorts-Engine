@@ -8,8 +8,10 @@ import { LoadingCard } from "@/components/loading-card";
 import { PageHeader } from "@/components/page-header";
 import { getLearningLoopData, type LearningEntry, type LearningLoopData } from "@/lib/db/learning-loop";
 
-// "Run weekly report now" keeps working after the response (next/server after()).
-export const maxDuration = 800;
+// Locally, "Run weekly report now" keeps working after the response (next/server
+// after()). 300 seconds is the most Vercel's Hobby plan allows; on Vercel the button
+// starts the GitHub Actions workflow instead.
+export const maxDuration = 300;
 
 const weekLabel = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 const pct = (v: number | null) => (v === null ? "n/a" : `${Math.round(v * 100)}%`);

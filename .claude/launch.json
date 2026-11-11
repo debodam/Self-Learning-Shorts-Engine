@@ -8,6 +8,12 @@
       "port": 3000
     },
     {
+      "name": "next-start-prod",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start", "-p", "3100"],
+      "port": 3100
+    },
+    {
       "name": "next-dev-mock-opus",
       "runtimeExecutable": "/usr/bin/env",
       "runtimeArgs": ["OPUSCLIP_MOCK=true", "npm", "run", "dev"],

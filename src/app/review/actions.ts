@@ -1,5 +1,6 @@
 "use server";
 
+import { requireSession } from "@/lib/auth/require";
 import { refresh } from "next/cache";
 import { runScoring } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
@@ -26,9 +27,10 @@ export type ScoreClipsResult = SyncFromOpusResult;
 
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 
-// TODO(auth): check the signed-in user here once auth exists. This spends Claude credits.
+// Behind the password gate (requireSession). This spends Claude credits.
 /** Scores clips waiting for scores, or with all set, re-scores every clip up for review. */
 export async function scoreClips(all = false): Promise<ScoreClipsResult> {
+  await requireSession();
   // Without a key, scores are mock placeholders, which must never be saved as real scores.
   if (!isIntegrationConnected("claude")) return { ok: false, message: "Connect Claude in Settings before scoring." };
   const db = getDb();
@@ -51,9 +53,9 @@ export async function scoreClips(all = false): Promise<ScoreClipsResult> {
   }
 }
 
-// TODO(auth): check the signed-in user here once auth exists. Until then anyone who can
-// reach the app can trigger a sync. It only reads from Opus, so it can't spend credits.
+// Behind the password gate (requireSession). It only reads from Opus, so it can't spend credits.
 export async function syncFromOpus(projectId: string): Promise<SyncFromOpusResult> {
+  await requireSession();
   if (typeof projectId !== "string" || !/^P\w+$/.test(projectId)) {
     return { ok: false, message: "Pick an Opus project to sync." };
   }
@@ -83,12 +85,14 @@ export async function syncFromOpus(projectId: string): Promise<SyncFromOpusResul
 }
 
 // Weekly flow -------------------------------------------------------------------
-// TODO(auth): check the signed-in user in each of these once auth exists.
+// Each action checks the dashboard session first (requireSession). Per-user accounts
+// come later; until then anyone with the password can use them.
 
 const message = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback);
 
 /** Submits 2 YouTube links to Opus as a new week. Spends Opus credits: the UI confirms first. */
 export async function startNewWeek(links: string[]): Promise<SyncFromOpusResult> {
+  await requireSession();
   if (!Array.isArray(links) || links.some((l) => typeof l !== "string")) return { ok: false, message: "Paste 2 YouTube links." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings before starting a week." };
   const db = getDb();
@@ -109,6 +113,7 @@ export async function startNewWeek(links: string[]): Promise<SyncFromOpusResult>
 
 /** Checks the week's Opus projects, syncing and scoring finished ones and picking the top 7. */
 export async function checkWeekStatus(weekId: string): Promise<SyncFromOpusResult> {
+  await requireSession();
   if (typeof weekId !== "string") return { ok: false, message: "No week to check." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();
@@ -131,6 +136,7 @@ export async function checkWeekStatus(weekId: string): Promise<SyncFromOpusResul
 }
 
 export async function togglePick(weekId: string, clipId: string, picked: boolean): Promise<SyncFromOpusResult> {
+  await requireSession();
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
   try {
@@ -175,6 +181,7 @@ const validItems = (items: unknown): items is PostItem[] =>
  * after a confirm dialog that lists the platforms and accounts.
  */
 export async function publishPicks(weekId: string, items: PostItem[]): Promise<ScheduleResult> {
+  await requireSession();
   if (typeof weekId !== "string" || !validItems(items)) return { ok: false, message: "Nothing to post." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();
@@ -199,6 +206,7 @@ export async function publishPicks(weekId: string, items: PostItem[]): Promise<S
 
 /** Saves the week's picks as Ready to schedule, with the preview's text. Posts nothing. */
 export async function savePicks(weekId: string, items: PostItem[]): Promise<ScheduleResult> {
+  await requireSession();
   if (typeof weekId !== "string" || !validItems(items)) return { ok: false, message: "Nothing to save." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
@@ -213,6 +221,7 @@ export async function savePicks(weekId: string, items: PostItem[]): Promise<Sche
 
 /** Writes the one caption (posted to all three platforms) for picks that don't have one. Uses Claude. */
 export async function writeCaptionsForPicks(weekId: string): Promise<ScheduleResult> {
+  await requireSession();
   if (typeof weekId !== "string") return { ok: false, message: "No week." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings first." };
@@ -230,6 +239,7 @@ export async function writeCaptionsForPicks(weekId: string): Promise<ScheduleRes
 
 /** Cancels one scheduled post in OpusClip and puts its clip back in the week's picks. */
 export async function cancelScheduled(postId: string): Promise<SyncFromOpusResult> {
+  await requireSession();
   if (typeof postId !== "string") return { ok: false, message: "No post to cancel." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();
@@ -251,6 +261,7 @@ const HEADLINE_MAX = 70;
  * re-render so the preview and HD file include it. No Opus credits.
  */
 export async function setHeadline(clipId: string, text: string): Promise<SyncFromOpusResult> {
+  await requireSession();
   if (typeof clipId !== "string" || typeof text !== "string") return { ok: false, message: "No clip." };
   const headline = text.replace(/\s+/g, " ").trim();
   if (!headline) return { ok: false, message: "The headline can't be empty." };
@@ -275,6 +286,7 @@ export async function setHeadline(clipId: string, text: string): Promise<SyncFro
 
 /** Adds the suggested factual title as a headline to every pick that has none. No Opus credits. */
 export async function addMissingPickHeadlines(weekId: string): Promise<SyncFromOpusResult> {
+  await requireSession();
   if (typeof weekId !== "string") return { ok: false, message: "No week." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings first." };
   const db = getDb();

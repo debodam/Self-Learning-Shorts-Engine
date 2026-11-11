@@ -7,6 +7,7 @@ import {
   CalendarClock,
   ClipboardCheck,
   Lightbulb,
+  LogOut,
   Settings,
   Sparkles,
   type LucideIcon,
@@ -54,6 +55,16 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <form method="post" action="/logout" className="mt-auto border-t border-line px-2 py-3">
+        <button
+          type="submit"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] text-body transition-colors hover:bg-page"
+        >
+          <LogOut className="size-[18px]" strokeWidth={1.75} />
+          Sign out
+        </button>
+      </form>
     </aside>
   );
 }

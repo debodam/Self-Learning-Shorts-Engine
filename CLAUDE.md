@@ -20,7 +20,7 @@ The learning loop. The scoring prompt (rubric included) lives in Supabase as ver
 
 ## Users
 
-Single-user auth for now. More teammates may be added later, so don't hardcode any user.
+One shared password for now, no user accounts: `src/proxy.ts` gates every page, API route, and server action with a session cookie signed from `DASHBOARD_PASSWORD`, and 5 wrong passwords lock an IP out for 15 minutes. Every new server action must call `requireSession()` first. More teammates may be added later, so don't hardcode any user. The app deploys to Vercel; deploy steps are in SETUP.md.
 
 ## Stack
 
@@ -72,4 +72,4 @@ Every clip needs a headline baked into the video before it's scheduled or posted
 
 1. **MVP 1: Generator (done).** Submit 2 YouTube links, OpusClip clips them, the agent scores them, the top 7 are highlighted, and they're posted through OpusClip to YouTube (Exponent channel), TikTok, and Instagram (Aced accounts), with one caption per clip used on all three. See Weekly flow.
 2. **MVP 2: YouTube metrics and self-learning scoring (current focus).** YouTube only. Backfill every Short on the channel, save a timestamped snapshot on each metrics pull, compute views at 48 hours and 7 days after publish so Shorts posted on different days compare fairly, link the Shorts we posted to their YouTube video IDs, and show it all on the Performance page. Then a self-learning loop that uses those results to improve clip scoring.
-3. **Later:** V1 data import, Vercel deploy, login, scheduled GitHub Actions routines, Instagram and TikTok metrics and their own APIs (posting to them through OpusClip is already part of MVP 1), RAG and similar-clip retrieval.
+3. **Later:** V1 data import, per-user login, Instagram and TikTok metrics and their own APIs (posting to them through OpusClip is already part of MVP 1), RAG and similar-clip retrieval.

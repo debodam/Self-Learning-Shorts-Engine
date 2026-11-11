@@ -1,5 +1,6 @@
 "use server";
 
+import { requireSession } from "@/lib/auth/require";
 import { refresh } from "next/cache";
 import { getDb } from "@/lib/db/client";
 import { youtubeConnected } from "@/lib/integrations/youtube";
@@ -8,9 +9,10 @@ import { pullYouTubeMetrics } from "@/lib/youtube-metrics";
 
 export type PullMetricsResult = { ok: boolean; message: string };
 
-// TODO(auth): check the signed-in user here once auth exists. It reads public YouTube
+// Behind the password gate (requireSession). It reads public YouTube
 // data (about 35 of the 10,000 daily quota units) and labels new Shorts with Haiku.
 export async function pullMetricsNow(): Promise<PullMetricsResult> {
+  await requireSession();
   // Without a key the Shorts are mock data, which must never be saved.
   if (!youtubeConnected()) return { ok: false, message: "Set YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID in .env.local first." };
   const db = getDb();

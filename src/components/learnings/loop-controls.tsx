@@ -28,7 +28,7 @@ export function RunReportButton({ lastRun }: { lastRun: ReportRun | null }) {
         type="button"
         disabled={pending || running}
         onClick={() => {
-          if (!confirm("Run the weekly report now? It uses Claude to write learnings and backtest each proposal, about $4 to $6.")) return;
+          if (!confirm("Run the weekly report now? It uses Claude to write learnings and backtest each proposal, about $1 to $2, and takes about 10 minutes.")) return;
           setResult(null);
           startTransition(async () => setResult(await runWeeklyReportNow()));
         }}

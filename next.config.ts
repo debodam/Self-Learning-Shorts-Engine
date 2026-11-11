@@ -5,9 +5,9 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   // ffmpeg-static ships a binary and resolves its own path, so keep it out of the bundle.
-  // TODO(deploy): confirm the Vercel build includes node_modules/ffmpeg-static/ffmpeg. Adding
-  // it with outputFileTracingIncludes made `next dev` rebuild in a loop, so if it's missing,
-  // set FFMPEG_PATH or add the include only for production builds.
+  // `next build` traces node_modules/ffmpeg-static/ffmpeg into the server output (see
+  // .next/server/app/review/page.js.nft.json), so Vercel ships it. Don't add
+  // outputFileTracingIncludes for it: that made `next dev` rebuild in a loop.
   serverExternalPackages: ["ffmpeg-static"],
   async redirects() {
     return [{ source: "/", destination: "/review", permanent: false }];

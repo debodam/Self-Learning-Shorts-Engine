@@ -1,6 +1,28 @@
-# aced-shorts-engine
+# Aced Shorts Engine
 
-Aced Shorts Engine: automated short-form content system.
+An internal dashboard and Claude agent that turns Aced's long-form YouTube videos into Shorts, posts them, measures how they do, and learns from the results.
+
+## What it does
+
+- **Review (MVP 1, the Generator).** Paste the week's 2 Aced YouTube links. They go to OpusClip with the Aced template, the clips sync back, and Claude scores each one on the rubric (Hook, Tension, Standalone, Payoff, Loopability) from its transcript and frames. The top 7 are picked automatically, each gets a headline baked into the video, and Claude writes one caption per clip. You review, swap picks, and schedule or post through OpusClip to YouTube (the Exponent channel), TikTok, and Instagram (Aced accounts). Scheduling and Post now always show a confirm step that names the platforms and accounts.
+- **Performance (MVP 2).** Every Short on the Aced YouTube channel, pulled daily with the YouTube Data API: views, likes, comments, views at 48 hours and 7 days, and settled views (the main performance number). Claude Haiku labels each Short's format, and Shorts we posted are linked to their clips.
+- **Scoring memory.** Every clip and Short has a Voyage embedding. When a clip is scored, the 5 most similar past Shorts and their settled views go into the prompt, and Claude predicts a views range. The top 7 ranks by rubric and predicted views together.
+- **Learnings (the learning loop).** The scoring prompt is versioned. Prediction accuracy is tracked per version and backtested on the channel's past Shorts. A weekly report writes what worked and what didn't and proposes up to 3 prompt changes, each backtested. Nothing changes until you approve one; any version can be rolled back to.
+- **Access.** The whole site sits behind one shared password (`DASHBOARD_PASSWORD`). There are no user accounts yet.
+
+It's a Next.js app with Supabase (Postgres and pgvector), the Claude API, the OpusClip API, the YouTube Data API, and Voyage AI. Scheduled jobs run in GitHub Actions and the dashboard runs on Vercel. Every integration falls back to mock data when its key is missing, so the app always runs. Keys, GitHub Actions secrets, and the Vercel deploy steps are in [SETUP.md](SETUP.md).
+
+## Running it locally
+
+```bash
+npm install
+```
+
+Copy `.env.example` to `.env.local`, set `DASHBOARD_PASSWORD` and any keys you have, then start the dev server and open http://localhost:3000:
+
+```bash
+npm run dev
+```
 
 ## Importing V1 clip performance
 
