@@ -11,8 +11,10 @@
     "import:v1": "node --env-file-if-exists=.env.local scripts/import-v1-performance.mts",
     "job:weekly-candidates": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/jobs/weekly-candidates.ts",
     "job:metrics-pull": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/jobs/metrics-pull.ts",
+    "job:embed": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/jobs/embed.ts",
     "job:label-shorts": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/jobs/label-shorts.ts",
-    "job:weekly-learnings": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/jobs/weekly-learnings.ts"
+    "job:weekly-report": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/jobs/weekly-report.ts",
+    "job:backtest": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/jobs/backtest.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

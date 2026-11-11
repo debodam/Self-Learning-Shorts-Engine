@@ -20,6 +20,7 @@ import {
 } from "@/lib/integrations/opus";
 import { addUsage, CAPTIONS_MODEL, emptyUsage, estimateCostUsd, writeCaption } from "@/lib/integrations/claude";
 import { getVideoInfo, normalizeYouTubeUrl } from "@/lib/integrations/youtube";
+import { rankClips } from "@/lib/ranking";
 import { saveOpusClips } from "@/lib/opus-sync";
 import { easternDate } from "@/lib/schedule-slots";
 
@@ -148,17 +149,21 @@ export async function checkWeek(db: Db, weekId: string): Promise<WeekStatusResul
 
 // Picks -------------------------------------------------------------------------
 
-/** Kept, scored clips from the week's videos, best rubric score first. */
-async function rankedWeekClips(db: Db, weekId: string) {
+/** Kept, scored clips from the week's videos, best first by rubric and predicted views (see src/lib/ranking.ts). */
+export async function rankedWeekClips(db: Db, weekId: string) {
   const { data, error } = await db
     .from("clips")
-    .select("id, picked, status, score_total, score_hook, score_tension, score_standalone, score_payoff, score_loopability, source_videos!inner (week_id)")
+    .select(
+      "id, title, suggested_title, picked, status, score_total, score_hook, score_tension, score_standalone, score_payoff, score_loopability, predicted_views_low, predicted_views_expected, predicted_views_high, source_videos!inner (week_id)",
+    )
     .eq("source_videos.week_id", weekId)
     .in("status", ["candidate", "approved"])
     .not("score_total", "is", null);
   if (error) throw new Error(`Failed to load the week's clips: ${error.message}`);
   const score = (c: (typeof data)[number], k: string) => c[`score_${k}` as keyof typeof c] as number;
-  return data.sort((a, b) => b.score_total! - a.score_total! || rubricCategories.reduce((d, k) => d || score(b, k) - score(a, k), 0));
+  // Rubric order first, so ties in rank score fall back to the rubric categories.
+  const byRubric = data.sort((a, b) => b.score_total! - a.score_total! || rubricCategories.reduce((d, k) => d || score(b, k) - score(a, k), 0));
+  return rankClips(byRubric.map((c) => ({ ...c, rubricTotal: c.score_total!, expectedViews: c.predicted_views_expected })));
 }
 
 /** Picks the top 7 kept clips by rubric when the week has no picks yet. Returns how many were picked. */

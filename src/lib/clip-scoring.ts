@@ -1,6 +1,6 @@
 import "server-only";
-import type { SimilarClip } from "@/lib/agent/prompts";
 import type { Db } from "@/lib/db/client";
+import { embedMissing, findSimilarShorts, SIMILAR_COUNT, type SimilarShort } from "@/lib/embeddings";
 import { MIN_FACE_FRAMES, NO_SPEAKER_REASON, shouldCut } from "@/lib/agent/rules";
 import { extractFrames } from "@/lib/frames";
 import {
@@ -16,6 +16,8 @@ import {
 } from "@/lib/integrations/claude";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { listClipsCached } from "@/lib/integrations/opus";
+import { voyageConnected } from "@/lib/integrations/voyage";
+import { getActivePrompt } from "@/lib/prompt-versions";
 
 // Scores candidate clips with Claude in two passes (each clip from its frames and
 // transcript, then each source video's clips compared side by side) and saves the results: only unscored clips by default,
@@ -23,7 +25,6 @@ import { listClipsCached } from "@/lib/integrations/opus";
 // the Review page buttons and the weekly candidates job. Each run is logged to agent_runs
 // with its token usage and estimated cost.
 
-const PAST_CLIPS_FOR_CALIBRATION = 20;
 // Clips scored at once. Keeps a 70 clip run to a few minutes without tripping rate limits.
 const CONCURRENCY = 8;
 
@@ -40,29 +41,11 @@ export type ScoringRun = {
   costUsd: number | null;
 };
 
-/** Recently posted clips with their latest views, so the agent can calibrate predictions. */
-export async function loadPastClips(db: Db): Promise<SimilarClip[]> {
-  const { data, error } = await db
-    .from("clips")
-    .select("title, format, hook_type, score_total, posts (platform, metrics (views, captured_at))")
-    .eq("status", "posted")
-    .order("created_at", { ascending: false })
-    .order("captured_at", { referencedTable: "posts.metrics", ascending: false })
-    .limit(1, { referencedTable: "posts.metrics" })
-    .limit(PAST_CLIPS_FOR_CALIBRATION);
-  if (error) throw new Error(`Failed to load past clips: ${error.message}`);
-  return data.map((r) => ({
-    title: r.title,
-    format: r.format,
-    hookType: r.hook_type,
-    scoreTotal: r.score_total,
-    views: Object.fromEntries(r.posts.flatMap((p) => (p.metrics[0]?.views != null ? [[p.platform, p.metrics[0].views]] : []))),
-  }));
-}
-
 export type ScoringOptions = {
   /** Re-score every clip up for review, not only unscored ones. */
   all?: boolean;
+  /** Only clips from this week's videos. */
+  weekId?: string;
   log?: (line: string) => void;
 };
 
@@ -83,7 +66,7 @@ function describeVision(vision: ClipVision | null) {
   return `face in ${vision.faceFrames} of ${vision.framesChecked} frames, up to ${vision.peopleCount} people, on-screen text ${vision.textReadable ? "readable" : "not readable"} on a phone`;
 }
 
-export async function runScoring(db: Db, { all = false, log = () => {} }: ScoringOptions = {}): Promise<ScoringRun> {
+export async function runScoring(db: Db, { all = false, weekId, log = () => {} }: ScoringOptions = {}): Promise<ScoringRun> {
   const model = isIntegrationConnected("claude") ? SCORING_MODEL : "mock";
   const { data: run, error: runError } = await db.from("agent_runs").insert({ kind: "scoring", model }).select("id").single();
   if (runError) throw new Error(`Failed to start the scoring run log: ${runError.message}`);
@@ -91,16 +74,25 @@ export async function runScoring(db: Db, { all = false, log = () => {} }: Scorin
   const result: ScoringRun = { model, scored: 0, cut: 0, noSpeaker: 0, failed: [], usage: emptyUsage(), costUsd: 0 };
   let fatal: string | null = null;
   try {
-    let query = db.from("clips").select("id, opus_clip_id, title, transcript, format, duration_seconds, source_videos (title)");
+    // Clips need an embedding to find similar past Shorts. Embedding is cheap and skips
+    // anything already embedded.
+    if (voyageConnected()) await embedMissing(db, { log });
+    else log("Voyage isn't connected, so clips are scored without similar past Shorts or view predictions.");
+
+    let query = db
+      .from("clips")
+      .select("id, opus_clip_id, title, transcript, format, duration_seconds, embedding, source_videos!inner (title, week_id)");
+    if (weekId) query = query.eq("source_videos.week_id", weekId);
     // Cut clips are saved as rejected. Approved, scheduled, and posted clips are never re-scored.
     query = all ? query.in("status", ["candidate", "rejected"]) : query.eq("status", "candidate").is("scored_at", null);
     const { data: clips, error } = await query.order("created_at");
     if (error) throw new Error(`Failed to load clips to score: ${error.message}`);
-    const [pastClips, previews] = await Promise.all([loadPastClips(db), loadPreviewUrls(clips.map((c) => c.opus_clip_id))]);
-    log(`${all ? "Re-scoring" : "Scoring"} ${clips.length} clips with ${model} and ${pastClips.length} past clips for calibration.`);
+    const [previews, prompt] = await Promise.all([loadPreviewUrls(clips.map((c) => c.opus_clip_id)), getActivePrompt(db)]);
+    log(`Using scoring prompt version ${prompt.version}.`);
+    log(`${all ? "Re-scoring" : "Scoring"} ${clips.length} clips with ${model}, each compared with its ${SIMILAR_COUNT} most similar past Shorts.`);
 
     // Pass 1: each clip on its own, from 3 frames and the transcript.
-    type Scored = { clip: (typeof clips)[number]; score: ClipScore };
+    type Scored = { clip: (typeof clips)[number]; score: ClipScore; similar: SimilarShort[] };
     const firstPass: Scored[] = [];
     const queue = [...clips];
     const worker = async () => {
@@ -115,6 +107,7 @@ export async function runScoring(db: Db, { all = false, log = () => {} }: Scorin
               return [];
             });
           }
+          const similar = await findSimilarShorts(db, clip);
           const score = await scoreClip(
             {
               title: clip.title,
@@ -123,11 +116,12 @@ export async function runScoring(db: Db, { all = false, log = () => {} }: Scorin
               format: clip.format,
               durationSeconds: clip.duration_seconds,
             },
-            pastClips.filter((p) => p.format === clip!.format),
+            similar.map((s) => ({ title: s.title, format: s.format, settledViews: s.settledViews, similarity: s.similarity })),
             frames,
+            prompt.text,
           );
           result.usage = addUsage(result.usage, score.usage);
-          firstPass.push({ clip, score });
+          firstPass.push({ clip, score, similar });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           result.failed.push({ title: clip.title, error: message });
@@ -172,7 +166,7 @@ export async function runScoring(db: Db, { all = false, log = () => {} }: Scorin
 
     // Save, applying the face rule over the rubric.
     await Promise.all(
-      firstPass.map(async ({ clip, score }) => {
+      firstPass.map(async ({ clip, score, similar }) => {
         const { scores, reasoning } = final.get(clip.id) ?? score;
         const noSpeaker = score.vision !== null && score.vision.faceFrames < MIN_FACE_FRAMES;
         const cut = noSpeaker || shouldCut(scores);
@@ -185,10 +179,22 @@ export async function runScoring(db: Db, { all = false, log = () => {} }: Scorin
             score_payoff: scores.payoff,
             score_loopability: scores.loopability,
             hook_type: score.hookType,
-            // Hidden until there's real performance data to predict from (Phase 3).
             predicted_views_youtube: null,
             predicted_views_tiktok: null,
             predicted_views_instagram: null,
+            // A prediction is only as good as the Shorts it compares with, so it's saved
+            // only when there were similar Shorts with settled views.
+            predicted_views_low: similar.length ? score.prediction.low : null,
+            predicted_views_expected: similar.length ? score.prediction.expected : null,
+            predicted_views_high: similar.length ? score.prediction.high : null,
+            prediction_reason: similar.length ? score.prediction.reason : null,
+            similar_shorts: similar.map((s) => ({
+              video_id: s.videoId,
+              title: s.title,
+              format: s.format,
+              settled_views: s.settledViews,
+              similarity: Math.round(s.similarity * 1000) / 1000,
+            })),
             score_reasoning: reasoning,
             suggested_title: score.suggestedTitle,
             youtube_title: score.youtube.title,
@@ -199,6 +205,7 @@ export async function runScoring(db: Db, { all = false, log = () => {} }: Scorin
             text_readable: score.vision?.textReadable ?? null,
             cut_reason: noSpeaker ? NO_SPEAKER_REASON : null,
             scored_at: new Date().toISOString(),
+            prompt_version: prompt.version,
             status: cut ? "rejected" : "candidate",
           })
           .eq("id", clip.id);
@@ -210,7 +217,8 @@ export async function runScoring(db: Db, { all = false, log = () => {} }: Scorin
         if (cut) result.cut++;
         if (noSpeaker) result.noSpeaker++;
         const total = Object.values(scores).reduce((a, b) => a + b, 0);
-        log(`  ${noSpeaker ? "Cut (no speaker)" : cut ? "Cut" : "Kept"} "${clip.title}": ${total}/25.`);
+        const predicted = similar.length ? `, predicted ${score.prediction.low} to ${score.prediction.high} views` : "";
+        log(`  ${noSpeaker ? "Cut (no speaker)" : cut ? "Cut" : "Kept"} "${clip.title}": ${total}/25${predicted}.`);
       }),
     );
   } catch (error) {

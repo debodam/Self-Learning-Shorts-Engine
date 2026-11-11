@@ -5,18 +5,20 @@ import * as z from "zod/v4";
 import {
   buildCaptionsMessage,
   buildCaptionsRepairMessage,
-  buildLearningsMessage,
+  buildWeeklyReportMessage,
   BATCH_CALIBRATION_SYSTEM_PROMPT,
   buildBatchCalibrationMessage,
   buildScoringMessage,
   buildScoringRepairMessage,
   CAPTIONS_SYSTEM_PROMPT,
-  LEARNINGS_SYSTEM_PROMPT,
+  WEEKLY_REPORT_SYSTEM_PROMPT,
   SCORING_SYSTEM_PROMPT,
   type BatchClipForAgent,
   type ClipForAgent,
-  type SimilarClip,
-  type WeekClipResult,
+  type SimilarShortForAgent,
+  type ShortForBacktest,
+  buildBacktestMessage,
+  type WeeklyReportInput,
 } from "@/lib/agent/prompts";
 import {
   CAPTION_RULES,
@@ -30,7 +32,7 @@ import {
 import type { RubricCategory } from "@/lib/clips";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { requireEnv } from "@/lib/integrations/shared";
-import { mockCaption, mockClipScore, mockWeeklyLearning } from "@/lib/mock/agent";
+import { mockCaption, mockClipScore } from "@/lib/mock/agent";
 import { CONFIDENCE_LEVELS, SHORT_FORMATS, type Confidence, type ShortFormat } from "@/lib/youtube-marks";
 
 // Claude API calls for the clip agent. Docs: https://platform.claude.com/docs
@@ -112,6 +114,8 @@ const scoreSchema = z.object({
     open_on_line: z.string(),
   }),
   reasoning: z.string(),
+  predicted_views: z.object({ low: z.number().int(), expected: z.number().int(), high: z.number().int() }),
+  prediction_reason: z.string(),
 });
 
 /** What the scorer saw in the clip's frames. */
@@ -137,9 +141,13 @@ export type ClipScore = {
   reasoning: string;
   /** Null when no frames were sent. */
   vision: ClipVision | null;
+  /** Predicted settled YouTube views, anchored on the similar Shorts. */
+  prediction: ClipPrediction;
   /** Tokens used, including any repair attempt. Zero for mock scores. */
   usage: TokenUsage;
 };
+
+export type ClipPrediction = { low: number; expected: number; high: number; reason: string };
 
 const MAX_SCORING_ATTEMPTS = 2;
 const MAX_REASON_WORDS = 40;
@@ -191,6 +199,11 @@ function scoringIssues(out: z.infer<typeof scoreSchema>, frameCount: number, { a
   const lines = out.youtube.description.split("\n").filter((l) => l.trim()).length;
   if (lines < descriptionLines[0] || lines > descriptionLines[1]) issues.push(`YouTube description must be 1 to 2 lines, has ${lines}`);
   if (frameCount && out.frames.length !== frameCount) issues.push(`frames must have exactly ${frameCount} entries, one per frame in order`);
+  const p = out.predicted_views;
+  if (p.low < 0 || p.low > p.expected || p.expected > p.high) issues.push(`predicted_views must have 0 <= low <= expected <= high; got ${p.low}, ${p.expected}, ${p.high}`);
+  issues.push(...checkViewerText("Prediction reason", out.prediction_reason));
+  const words = out.prediction_reason.trim().split(/\s+/).length;
+  if (words > MAX_REASON_WORDS) issues.push(`prediction_reason is ${words} words; keep it to one line of at most 25 words`);
   return issues;
 }
 
@@ -199,7 +212,13 @@ function scoringIssues(out: z.infer<typeof scoreSchema>, frameCount: number, { a
  * clip. Reports what the frames show and writes a factual title and YouTube copy. Checks
  * the text against the content rules and asks Claude to fix any problems once.
  */
-export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] = [], frames: Buffer[] = []): Promise<ClipScore> {
+export async function scoreClip(
+  clip: ClipForAgent,
+  similarShorts: SimilarShortForAgent[] = [],
+  frames: Buffer[] = [],
+  /** The active prompt version's text. Defaults to the seed prompt in the code. */
+  systemPrompt: string = SCORING_SYSTEM_PROMPT,
+): Promise<ClipScore> {
   if (!connected()) return mockClipScore(clip);
 
   // Images go before the text that refers to them.
@@ -208,7 +227,7 @@ export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] 
       type: "image",
       source: { type: "base64", media_type: "image/jpeg", data: frame.toString("base64") },
     })),
-    { type: "text", text: buildScoringMessage(clip, similarClips, frames.length) },
+    { type: "text", text: buildScoringMessage(clip, similarShorts, frames.length) },
   ];
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content }];
   let usage = emptyUsage();
@@ -222,7 +241,7 @@ export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] 
       fallbacks: "default",
       thinking: { type: "adaptive" },
       output_config: { effort: "medium", format: betaZodOutputFormat(scoreSchema) },
-      system: [{ type: "text", text: SCORING_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages,
     });
     usage = addUsage(usage, toUsage(response.usage));
@@ -236,8 +255,11 @@ export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] 
     messages.push({ role: "assistant", content: response.content }, { role: "user", content: buildScoringRepairMessage(issues) });
   }
   if (!out) throw new Error("Claude returned no parseable score");
-  // Titles a character or two over after the repair attempt get trimmed rather than
-  // losing the whole score. Anything else still wrong fails the clip.
+  // Titles a character or two over after the repair attempt get trimmed, and an
+  // out-of-order range gets sorted, rather than losing the whole score. Anything else
+  // still wrong fails the clip.
+  const [low, expected, high] = [out.predicted_views.low, out.predicted_views.expected, out.predicted_views.high].map((v) => Math.max(0, v)).sort((a, b) => a - b);
+  out = { ...out, predicted_views: { low, expected, high } };
   issues = scoringIssues(out, frames.length, { allowLongTitles: true });
   if (issues.length) throw new Error(`Score still breaks the rules after ${MAX_SCORING_ATTEMPTS} attempts: ${issues.join("; ")}`);
   out = {
@@ -245,6 +267,7 @@ export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] 
     suggested_title: trimTitle(out.suggested_title),
     youtube: { ...out.youtube, title: trimTitle(out.youtube.title) },
     reasoning: cleanReason(out.reasoning),
+    prediction_reason: cleanReason(out.prediction_reason),
   };
 
   const scores = clampScores(out.scores);
@@ -271,6 +294,12 @@ export async function scoreClip(clip: ClipForAgent, similarClips: SimilarClip[] 
           textReadable: out.text_readable,
         }
       : null,
+    prediction: {
+      low: Math.max(0, out.predicted_views.low),
+      expected: Math.max(0, out.predicted_views.expected),
+      high: Math.max(0, out.predicted_views.high),
+      reason: out.prediction_reason,
+    },
     usage,
   };
 }
@@ -373,37 +402,91 @@ export async function writeCaption(clip: ClipForAgent): Promise<{ caption: ClipC
   throw new Error(`The caption still breaks the rules after ${MAX_CAPTION_ATTEMPTS} attempts: ${issues.join("; ")}`);
 }
 
-// Weekly learnings -------------------------------------------------------------
+// Weekly report ---------------------------------------------------------------------
 
-const learningsSchema = z.object({
+const reportSchema = z.object({
   what_worked: z.array(z.string()),
-  what_changed: z.array(z.string()),
+  what_didnt_work: z.array(z.string()),
   reasoning: z.string(),
+  patterns: z.array(z.object({ dimension: z.enum(["format", "hook type", "headline style", "topic"]), finding: z.string() })),
+  proposals: z.array(z.object({ title: z.string(), reasoning: z.string(), old_text: z.string(), new_text: z.string() })),
 });
 
-export type WeeklyLearningDraft = { whatWorked: string[]; whatChanged: string[]; reasoning: string };
+export type ReportProposal = { title: string; reasoning: string; oldText: string; newText: string };
+export type WeeklyReportDraft = {
+  whatWorked: string[];
+  whatDidntWork: string[];
+  reasoning: string;
+  patterns: { dimension: string; finding: string }[];
+  proposals: ReportProposal[];
+  /** Proposals dropped because their old_text wasn't in the prompt exactly once. */
+  dropped: string[];
+  usage: TokenUsage;
+};
 
-/** Compares a week's predictions with actual results and writes the learnings entry. */
-export async function writeWeeklyLearnings(weekStart: string, clips: WeekClipResult[]): Promise<WeeklyLearningDraft> {
-  if (!connected()) return mockWeeklyLearning(clips);
+const MAX_PROPOSALS = 3;
+export const REPORT_MODEL = MODEL;
 
-  const response = await getClient().beta.messages.parse({
-    model: MODEL,
-    max_tokens: 16000,
-    betas: [FALLBACK_BETA],
-    fallbacks: "default",
-    thinking: { type: "adaptive" },
-    output_config: { effort: "high", format: betaZodOutputFormat(learningsSchema) },
-    system: [{ type: "text", text: LEARNINGS_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: buildLearningsMessage(weekStart, clips) }],
-  });
-  assertUsable(response, "write the weekly learnings");
-  const out = response.parsed_output;
-  if (!out) throw new Error("Claude returned no parseable learnings");
+function proposalIssues(promptText: string, p: { title: string; old_text: string; new_text: string }) {
+  const count = p.old_text ? promptText.split(p.old_text).length - 1 : 0;
+  const issues: string[] = [];
+  if (count !== 1) issues.push(`"${p.title}": old_text appears ${count} times in the prompt; it must be copied exactly and appear once`);
+  if (p.old_text === p.new_text) issues.push(`"${p.title}": new_text is the same as old_text`);
+  issues.push(...checkViewerText(`"${p.title}" new_text`, p.new_text));
+  return issues;
+}
 
-  const issues = [...out.what_worked, ...out.what_changed, out.reasoning].flatMap((t) => checkViewerText("Learnings", t));
-  if (issues.length) throw new Error(`Claude's learnings broke the rules: ${[...new Set(issues)].join("; ")}`);
-  return { whatWorked: out.what_worked, whatChanged: out.what_changed, reasoning: out.reasoning };
+/**
+ * Writes the weekly learnings and up to 3 proposed prompt changes from accuracy numbers
+ * and backtest results. Asks Claude to fix rule breaks once, then drops any proposal
+ * whose old_text still isn't in the prompt exactly once.
+ */
+export async function writeWeeklyReport(input: WeeklyReportInput): Promise<WeeklyReportDraft> {
+  if (!connected()) throw new Error("Claude isn't connected, so the weekly report can't be written.");
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: buildWeeklyReportMessage(input) }];
+  let usage = emptyUsage();
+  let out: z.infer<typeof reportSchema> | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const response = await getClient().beta.messages.parse({
+      model: MODEL,
+      max_tokens: 32000,
+      betas: [FALLBACK_BETA],
+      fallbacks: "default",
+      thinking: { type: "adaptive" },
+      output_config: { effort: "high", format: betaZodOutputFormat(reportSchema) },
+      system: [{ type: "text", text: WEEKLY_REPORT_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      messages,
+    });
+    usage = addUsage(usage, toUsage(response.usage));
+    assertUsable(response, "write the weekly report");
+    out = response.parsed_output;
+    if (!out) throw new Error("Claude returned no parseable weekly report");
+    const text = [...out.what_worked, ...out.what_didnt_work, out.reasoning, ...out.patterns.map((p) => p.finding), ...out.proposals.flatMap((p) => [p.title, p.reasoning])];
+    const issues = [
+      ...text.flatMap((t) => checkViewerText("Report", t)),
+      ...out.proposals.slice(0, MAX_PROPOSALS).flatMap((p) => proposalIssues(input.promptText, p)),
+      ...(out.proposals.length > MAX_PROPOSALS ? [`at most ${MAX_PROPOSALS} proposals; got ${out.proposals.length}`] : []),
+    ];
+    if (issues.length === 0 || attempt === 2) break;
+    messages.push({ role: "assistant", content: response.content });
+    messages.push({
+      role: "user",
+      content: `That breaks these rules:\n${[...new Set(issues)].map((i) => `- ${i}`).join("\n")}\n\nWrite the report again with every rule met. Copy old_text exactly from the prompt.`,
+    });
+  }
+  if (!out) throw new Error("Claude returned no parseable weekly report");
+  const textIssues = [...out.what_worked, ...out.what_didnt_work, out.reasoning].flatMap((t) => checkViewerText("Report", t));
+  if (textIssues.length) throw new Error(`The weekly report broke the content rules: ${[...new Set(textIssues)].join("; ")}`);
+  const kept = out.proposals.slice(0, MAX_PROPOSALS).filter((p) => proposalIssues(input.promptText, p).length === 0);
+  return {
+    whatWorked: out.what_worked,
+    whatDidntWork: out.what_didnt_work,
+    reasoning: out.reasoning,
+    patterns: out.patterns.filter((p) => checkViewerText("Pattern", p.finding).length === 0),
+    proposals: kept.map((p) => ({ title: p.title, reasoning: p.reasoning, oldText: p.old_text, newText: p.new_text })),
+    dropped: out.proposals.filter((p) => !kept.includes(p)).map((p) => p.title),
+    usage,
+  };
 }
 
 // Short format labels --------------------------------------------------------------
@@ -458,4 +541,48 @@ export async function labelShortFormat(short: ShortForLabel): Promise<ShortLabel
   const out = response.parsed_output;
   if (!out) throw new Error("Claude returned no parseable label");
   return { format: out.format, confidence: out.confidence, reason: out.reason.trim(), usage: toUsage(response.usage) };
+}
+
+// Backtests -------------------------------------------------------------------------
+
+const backtestSchema = z.object({
+  scores: rubricScoresSchema,
+  predicted_views: z.object({ low: z.number().int(), expected: z.number().int(), high: z.number().int() }),
+  prediction_reason: z.string(),
+});
+
+export type BacktestPrediction = { rubricTotal: number; low: number; expected: number; high: number; reason: string; usage: TokenUsage };
+
+/**
+ * Scores a published Short with a given prompt version as if it were new, using only
+ * Shorts published before it. Same model and effort as real scoring, so a backtest
+ * measures the prompt that would actually run.
+ */
+export async function predictForBacktest(systemPrompt: string, short: ShortForBacktest, similar: SimilarShortForAgent[]): Promise<BacktestPrediction> {
+  if (!connected()) throw new Error("Claude isn't connected, so there's nothing to backtest.");
+  const response = await getClient().beta.messages.parse({
+    model: SCORING_MODEL,
+    max_tokens: 16000,
+    betas: [FALLBACK_BETA],
+    fallbacks: "default",
+    thinking: { type: "adaptive" },
+    output_config: { effort: "medium", format: betaZodOutputFormat(backtestSchema) },
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: buildBacktestMessage(short, similar) }],
+  });
+  assertUsable(response, "backtest the Short");
+  const out = response.parsed_output;
+  if (!out) throw new Error("Claude returned no parseable backtest prediction");
+  const [low, expected, high] = [out.predicted_views.low, out.predicted_views.expected, out.predicted_views.high]
+    .map((v) => Math.max(0, v))
+    .sort((a, b) => a - b);
+  const scores = clampScores(out.scores);
+  return {
+    rubricTotal: Object.values(scores).reduce((a, b) => a + b, 0),
+    low,
+    expected,
+    high,
+    reason: cleanReason(out.prediction_reason),
+    usage: toUsage(response.usage),
+  };
 }

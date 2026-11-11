@@ -56,6 +56,7 @@ Three GitHub Actions workflows. Metrics pull runs daily at 13:00 UTC; the others
 | --- | --- | --- |
 | Weekly candidates | Finds new long-form uploads, submits them to OpusClip, imports finished clips, and scores them with the agent | `npm run job:weekly-candidates` |
 | Metrics pull | Saves every Short on the Aced YouTube channel with a views, likes, and comments snapshot, updates views at 48h and 7d and settled views, links the ones we posted, and labels new Shorts' format with Claude Haiku (same as Pull metrics now) | `npm run job:metrics-pull` |
+| Embed | Embeds new clips and Shorts with Voyage for similar-Short search in scoring; runs daily after the metrics pull. `-- --all` re-embeds everything. | `npm run job:embed` |
 | Label Shorts | Labels unlabeled Shorts' format with Claude Haiku and prints the breakdown and cost; `-- --all` relabels every Short. Not a workflow. | `npm run job:label-shorts` |
 | Weekly learnings | Compares predicted and actual views for last week's posts and writes the learnings entry | `npm run job:weekly-learnings` |
 

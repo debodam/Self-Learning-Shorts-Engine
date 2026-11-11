@@ -61,7 +61,15 @@ export type Database = {
         Row: {
           created_at: string
           duration_seconds: number | null
+          embedded_at: string | null
           embedding: string | null
+          embedding_model: string | null
+          prediction_reason: string | null
+          prompt_version: number | null
+          predicted_views_expected: number | null
+          predicted_views_high: number | null
+          predicted_views_low: number | null
+          similar_shorts: Json | null
           format: Database["public"]["Enums"]["clip_format"]
           hook: string | null
           hook_type: string | null
@@ -99,7 +107,15 @@ export type Database = {
         Insert: {
           created_at?: string
           duration_seconds?: number | null
+          embedded_at?: string | null
           embedding?: string | null
+          embedding_model?: string | null
+          prediction_reason?: string | null
+          prompt_version?: number | null
+          predicted_views_expected?: number | null
+          predicted_views_high?: number | null
+          predicted_views_low?: number | null
+          similar_shorts?: Json | null
           format: Database["public"]["Enums"]["clip_format"]
           hook?: string | null
           hook_type?: string | null
@@ -137,7 +153,15 @@ export type Database = {
         Update: {
           created_at?: string
           duration_seconds?: number | null
+          embedded_at?: string | null
           embedding?: string | null
+          embedding_model?: string | null
+          prediction_reason?: string | null
+          prompt_version?: number | null
+          predicted_views_expected?: number | null
+          predicted_views_high?: number | null
+          predicted_views_low?: number | null
+          similar_shorts?: Json | null
           format?: Database["public"]["Enums"]["clip_format"]
           hook?: string | null
           hook_type?: string | null
@@ -190,6 +214,10 @@ export type Database = {
           week_start: string
           what_changed: string[]
           what_worked: string[]
+          what_didnt_work: string[]
+          patterns: Json | null
+          accuracy: Json | null
+          cost_usd: number | null
         }
         Insert: {
           created_at?: string
@@ -198,6 +226,10 @@ export type Database = {
           week_start: string
           what_changed?: string[]
           what_worked?: string[]
+          what_didnt_work?: string[]
+          patterns?: Json | null
+          accuracy?: Json | null
+          cost_usd?: number | null
         }
         Update: {
           created_at?: string
@@ -206,6 +238,10 @@ export type Database = {
           week_start?: string
           what_changed?: string[]
           what_worked?: string[]
+          what_didnt_work?: string[]
+          patterns?: Json | null
+          accuracy?: Json | null
+          cost_usd?: number | null
         }
         Relationships: []
       }
@@ -409,6 +445,9 @@ export type Database = {
           created_at: string
           description: string
           duration_seconds: number
+          embedded_at: string | null
+          embedding: string | null
+          embedding_model: string | null
           format: string | null
           format_confidence: string | null
           format_labeled_at: string | null
@@ -431,6 +470,9 @@ export type Database = {
           created_at?: string
           description?: string
           duration_seconds: number
+          embedded_at?: string | null
+          embedding?: string | null
+          embedding_model?: string | null
           format?: string | null
           format_confidence?: string | null
           format_labeled_at?: string | null
@@ -453,6 +495,9 @@ export type Database = {
           created_at?: string
           description?: string
           duration_seconds?: number
+          embedded_at?: string | null
+          embedding?: string | null
+          embedding_model?: string | null
           format?: string | null
           format_confidence?: string | null
           format_labeled_at?: string | null
@@ -480,12 +525,290 @@ export type Database = {
           },
         ]
       }
+      prompt_versions: {
+        Row: {
+          id: string
+          version: number
+          text: string
+          notes: string
+          active: boolean
+          proposal_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          version: number
+          text: string
+          notes?: string
+          active?: boolean
+          proposal_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          version?: number
+          text?: string
+          notes?: string
+          active?: boolean
+          proposal_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      backtest_runs: {
+        Row: {
+          id: string
+          created_at: string
+          finished_at: string | null
+          label: string
+          prompt_version: number | null
+          proposal_id: string | null
+          model: string
+          shorts_count: number
+          spearman: number | null
+          range_hit_rate: number | null
+          top7_hit_rate: number | null
+          top7_groups: number | null
+          input_tokens: number
+          output_tokens: number
+          cache_read_input_tokens: number
+          cache_creation_input_tokens: number
+          cost_usd: number | null
+          error: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          finished_at?: string | null
+          label: string
+          prompt_version?: number | null
+          proposal_id?: string | null
+          model: string
+          shorts_count?: number
+          spearman?: number | null
+          range_hit_rate?: number | null
+          top7_hit_rate?: number | null
+          top7_groups?: number | null
+          input_tokens?: number
+          output_tokens?: number
+          cache_read_input_tokens?: number
+          cache_creation_input_tokens?: number
+          cost_usd?: number | null
+          error?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          finished_at?: string | null
+          label?: string
+          prompt_version?: number | null
+          proposal_id?: string | null
+          model?: string
+          shorts_count?: number
+          spearman?: number | null
+          range_hit_rate?: number | null
+          top7_hit_rate?: number | null
+          top7_groups?: number | null
+          input_tokens?: number
+          output_tokens?: number
+          cache_read_input_tokens?: number
+          cache_creation_input_tokens?: number
+          cost_usd?: number | null
+          error?: string | null
+        }
+        Relationships: []
+      }
+      backtest_predictions: {
+        Row: {
+          run_id: string
+          video_id: string
+          rubric_total: number | null
+          predicted_low: number | null
+          predicted_expected: number | null
+          predicted_high: number | null
+          actual_settled: number
+          reason: string | null
+        }
+        Insert: {
+          run_id: string
+          video_id: string
+          rubric_total?: number | null
+          predicted_low?: number | null
+          predicted_expected?: number | null
+          predicted_high?: number | null
+          actual_settled: number
+          reason?: string | null
+        }
+        Update: {
+          run_id?: string
+          video_id?: string
+          rubric_total?: number | null
+          predicted_low?: number | null
+          predicted_expected?: number | null
+          predicted_high?: number | null
+          actual_settled?: number
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "backtest_predictions_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "youtube_shorts"
+            referencedColumns: ["video_id"]
+          },
+        ]
+      }
+      accuracy_snapshots: {
+        Row: {
+          id: string
+          created_at: string
+          source: string
+          prompt_version: number | null
+          items_count: number
+          spearman: number | null
+          range_hit_rate: number | null
+          top7_hit_rate: number | null
+          backtest_run_id: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          source: string
+          prompt_version?: number | null
+          items_count?: number
+          spearman?: number | null
+          range_hit_rate?: number | null
+          top7_hit_rate?: number | null
+          backtest_run_id?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          source?: string
+          prompt_version?: number | null
+          items_count?: number
+          spearman?: number | null
+          range_hit_rate?: number | null
+          top7_hit_rate?: number | null
+          backtest_run_id?: string | null
+        }
+        Relationships: []
+      }
+      prompt_proposals: {
+        Row: {
+          id: string
+          learning_id: string | null
+          created_at: string
+          base_version: number
+          title: string
+          reasoning: string
+          old_text: string
+          new_text: string
+          status: string
+          rejection_reason: string | null
+          decided_at: string | null
+          resulting_version: number | null
+          baseline_run_id: string | null
+          backtest_run_id: string | null
+        }
+        Insert: {
+          id?: string
+          learning_id?: string | null
+          created_at?: string
+          base_version: number
+          title: string
+          reasoning: string
+          old_text: string
+          new_text: string
+          status?: string
+          rejection_reason?: string | null
+          decided_at?: string | null
+          resulting_version?: number | null
+          baseline_run_id?: string | null
+          backtest_run_id?: string | null
+        }
+        Update: {
+          id?: string
+          learning_id?: string | null
+          created_at?: string
+          base_version?: number
+          title?: string
+          reasoning?: string
+          old_text?: string
+          new_text?: string
+          status?: string
+          rejection_reason?: string | null
+          decided_at?: string | null
+          resulting_version?: number | null
+          baseline_run_id?: string | null
+          backtest_run_id?: string | null
+        }
+        Relationships: []
+      }
+      report_runs: {
+        Row: {
+          id: string
+          started_at: string
+          finished_at: string | null
+          trigger: string
+          status: string
+          message: string | null
+        }
+        Insert: {
+          id?: string
+          started_at?: string
+          finished_at?: string | null
+          trigger: string
+          status?: string
+          message?: string | null
+        }
+        Update: {
+          id?: string
+          started_at?: string
+          finished_at?: string | null
+          trigger?: string
+          status?: string
+          message?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      match_similar_shorts_before: {
+        Args: {
+          query_embedding: string
+          published_before: string
+          match_count?: number
+        }
+        Returns: {
+          video_id: string
+          title: string
+          format: string | null
+          published_at: string
+          settled_views: number
+          similarity: number
+        }[]
+      }
+      match_similar_shorts: {
+        Args: {
+          query_embedding: string
+          match_count?: number
+          min_age_days?: number
+          exclude_clip_id?: string | null
+        }
+        Returns: {
+          video_id: string
+          title: string
+          format: string | null
+          published_at: string
+          settled_views: number
+          similarity: number
+        }[]
+      }
     }
     Enums: {
       clip_format: "mock" | "conversational"

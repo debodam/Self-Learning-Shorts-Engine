@@ -1,23 +1,23 @@
-# Compare predicted and actual views for a week of posted clips and write that week's learnings entry.
-# Manual trigger only for now. To schedule it, add a `schedule:` cron trigger.
-# Keys come from repository secrets (see SETUP.md). Any integration whose secrets are
-# missing uses mock data, and without the Supabase secrets the job runs as a dry run.
-name: Weekly learnings
+# Weekly report (MVP 2 learning loop): measures how accurate the scoring agent's view
+# predictions were, writes the week's learnings entry, proposes up to 3 changes to the
+# scoring prompt, and backtests each one. Nothing changes until someone approves a
+# proposal on the Learnings page. Keys come from repository secrets (see SETUP.md).
+# Any error, including a missing secret, fails the run.
+name: Weekly report
 
 on:
+  schedule:
+    # Mondays at 14:00 UTC (9 or 10am Eastern), after the daily metrics pull.
+    - cron: "0 14 * * 1"
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: "Dry run: read everything, write nothing"
-        type: boolean
-        default: false
       week_start:
         description: "Monday of the week to review (YYYY-MM-DD). Leave blank for last week."
         type: string
         required: false
 
 concurrency:
-  group: weekly-learnings
+  group: weekly-report
   cancel-in-progress: false
 
 permissions:
@@ -26,9 +26,8 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
-      DRY_RUN: ${{ inputs.dry_run }}
       WEEK_START: ${{ inputs.week_start }}
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -41,4 +40,5 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run job:weekly-learnings
+      # Exits non-zero on any error, which fails the run.
+      - run: npm run job:weekly-report

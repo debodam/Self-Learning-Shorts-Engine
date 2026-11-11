@@ -1,6 +1,6 @@
-import type { ClipForAgent, WeekClipResult } from "@/lib/agent/prompts";
+import type { ClipForAgent } from "@/lib/agent/prompts";
 import { shouldCut, type ClipCaption } from "@/lib/agent/rules";
-import type { ClipScore, WeeklyLearningDraft } from "@/lib/integrations/claude";
+import type { ClipScore } from "@/lib/integrations/claude";
 import { mockCandidateClips } from "@/lib/mock/candidate-clips";
 
 // Stand-in agent output for when ANTHROPIC_API_KEY isn't set.
@@ -27,6 +27,7 @@ export function mockClipScore(clip: ClipForAgent): ClipScore {
     youtube: { title: shortTitle(clip.title), description: `A real moment from "${clip.sourceVideoTitle}".` },
     framing: { speakerCount: twoSpeakers ? 2 : 1, layout: twoSpeakers ? "split" : "single", openOnLine: firstLine },
     reasoning: "Mock score: no Claude API key is set, so these are placeholder scores for layout and testing.",
+    prediction: { low: 500, expected: 1500, high: 4000, reason: "Mock prediction: no Claude API key is set." },
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   };
 }
@@ -37,25 +38,5 @@ export function mockCaption(clip: ClipForAgent): ClipCaption {
     title: shortTitle(clip.title),
     context: [`A real moment from "${clip.sourceVideoTitle}".`],
     hashtags: ["#interviewprep", topic, "#careeradvice"],
-  };
-}
-
-/** A placeholder learnings entry built from the week's real numbers, without Claude. */
-export function mockWeeklyLearning(clips: WeekClipResult[]): WeeklyLearningDraft {
-  const totalViews = (c: WeekClipResult) =>
-    Object.values(c.actual).reduce((sum, a) => sum + (a?.views ?? 0), 0);
-  const totalPredicted = (c: WeekClipResult) => Object.values(c.predicted).reduce((sum, v) => sum + (v ?? 0), 0);
-  const ranked = [...clips].sort((a, b) => totalViews(b) - totalViews(a));
-  const top = ranked[0];
-  const whatWorked = top
-    ? [
-        `"${top.title}" had the most views this week, ${totalViews(top)} across platforms` +
-          (totalPredicted(top) ? ` against ${totalPredicted(top)} predicted.` : " (no prediction on record)."),
-      ]
-    : ["No clips with metrics this week."];
-  return {
-    whatWorked,
-    whatChanged: ["No changes. This entry was written without Claude because ANTHROPIC_API_KEY isn't set."],
-    reasoning: `Mock learnings from ${clips.length} clips. Set ANTHROPIC_API_KEY to have the agent compare predictions with results.`,
   };
 }

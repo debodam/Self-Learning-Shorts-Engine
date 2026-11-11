@@ -40,6 +40,13 @@ export const integrations: Integration[] = [
     envVars: ["YOUTUBE_API_KEY", "YOUTUBE_CHANNEL_ID"],
   },
   {
+    id: "voyage",
+    phase: 2,
+    name: "Voyage AI",
+    description: "Embeddings for clips and Shorts, so scoring can compare a clip with similar past Shorts.",
+    envVars: ["VOYAGE_API_KEY"],
+  },
+  {
     id: "instagram",
     phase: 3,
     name: "Instagram",

@@ -1,6 +1,7 @@
 # Daily YouTube metrics pull (MVP 2): every Short on the Aced channel gets a views,
 # likes, and comments snapshot, so views at 48 hours and 7 days get captured for new
-# Shorts. Also links Shorts we posted and labels new Shorts' format with Claude Haiku.
+# Shorts. Also links Shorts we posted, labels new Shorts' format with Claude Haiku, and
+# embeds new clips and Shorts with Voyage so scoring can find similar past Shorts.
 # Keys come from repository secrets (see SETUP.md > Daily metrics pull).
 #
 # Scheduled runs require every secret: a missing one fails the run instead of falling
@@ -40,6 +41,7 @@ jobs:
       YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
       # Optional: without it, new Shorts wait for a label until the next pull with a key.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -47,5 +49,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # The job exits non-zero on any error, which fails the run.
-      - run: npm run job:metrics-pull
+      # Each job exits non-zero on any error, which fails the run.
+      - name: Pull metrics
+        run: npm run job:metrics-pull
+      # After the pull, so new Shorts already have the format label their embedding uses.
+      - name: Embed new clips and Shorts
+        run: npm run job:embed

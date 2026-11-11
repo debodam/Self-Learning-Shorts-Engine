@@ -12,6 +12,10 @@ YouTube metrics come from a plain Data API v3 key (`YOUTUBE_API_KEY`, public dat
 
 Settled views are the main performance number everywhere: current views for Shorts older than 30 days, otherwise views at 7 days once captured. Each Short's format (mock interview, conversational, explainer, or other) is labeled by Claude Haiku from its title, description, and thumbnail, with a confidence level. The metrics pull runs daily in GitHub Actions so 48-hour and 7-day snapshots get captured.
 
+The scoring agent has a memory. Every pipeline clip (format, title, headline, transcript) and every channel Short (format, title, description) gets a Voyage `voyage-4-large` embedding (1024 dimensions). When a clip is scored, the 5 most similar Shorts with settled views that are at least 7 days old go into the prompt, and Claude returns a predicted settled views range (low, expected, high) and a one-line reason naming the Shorts it compared against. The rubric is still scored on the clip itself.
+
+Ranking formula for the top 7 (src/lib/ranking.ts): rank score = 0.5 x rubric part + 0.5 x views part. The rubric part is (rubric total - 5) / 20, so 5/25 is 0 and 25/25 is 1. The views part is the percentile of the clip's expected predicted views among the clips being ranked, 0 for the lowest and 1 for the highest. A clip with no prediction gets 0.5 for the views part. Ties go to the higher rubric total, then the higher expected views. Cuts still come from the rubric alone (under 3 on Hook or Standalone, or the face rule).
+
 ## Users
 
 Single-user auth for now. More teammates may be added later, so don't hardcode any user.

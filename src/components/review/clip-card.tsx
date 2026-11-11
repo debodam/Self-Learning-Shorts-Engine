@@ -199,7 +199,7 @@ export function ClipCard({
           )}
         </div>
 
-        {/* Predicted views are hidden until real YouTube results are in Supabase (Phase 3). */}
+        {clip.prediction && <PredictedViews clip={clip} />}
 
         {onToggle && (
           <label className="mt-auto flex cursor-pointer items-center justify-between border-t border-line pt-3">
@@ -227,6 +227,67 @@ export function ClipCard({
         )}
       </div>
     </article>
+  );
+}
+
+const compactViews = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const fullViews = new Intl.NumberFormat("en-US");
+
+/** Predicted settled YouTube views and the similar past Shorts they came from. */
+function PredictedViews({ clip }: { clip: CandidateClip }) {
+  const p = clip.prediction!;
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between">
+        <span
+          className="text-xs font-medium uppercase tracking-wide text-muted"
+          title="Settled YouTube views: total after 30 days, or 7-day views for newer Shorts"
+        >
+          Predicted views
+        </span>
+        <span className="text-sm font-semibold text-primary">{compactViews.format(p.expected)}</span>
+      </div>
+      <dl className="grid grid-cols-3 gap-1.5 text-center">
+        {(
+          [
+            ["Low", p.low],
+            ["Expected", p.expected],
+            ["High", p.high],
+          ] as const
+        ).map(([label, value]) => (
+          <div key={label} className="flex flex-col-reverse rounded-md bg-page py-1.5">
+            <dt className="text-[11px] text-muted">{label}</dt>
+            <dd className="text-sm font-semibold text-heading">{compactViews.format(value)}</dd>
+          </div>
+        ))}
+      </dl>
+      {p.reason && <p className="mt-2 text-xs text-muted">{p.reason}</p>}
+      {clip.similarShorts.length > 0 && (
+        <details className="group mt-2 text-sm">
+          <summary className="cursor-pointer select-none font-medium text-primary hover:underline">
+            Similar past Shorts ({clip.similarShorts.length})
+          </summary>
+          <ol className="mt-2 space-y-1.5">
+            {clip.similarShorts.map((s) => (
+              <li key={s.videoId} className="flex items-baseline justify-between gap-3">
+                <a
+                  href={`https://www.youtube.com/shorts/${s.videoId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 text-body hover:text-primary"
+                >
+                  {s.title}
+                  <ExternalLink className="ml-1 inline size-3 text-muted" />
+                </a>
+                <span className="shrink-0 tabular-nums text-muted" title="Settled views">
+                  {fullViews.format(s.settledViews)}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
+    </div>
   );
 }
 

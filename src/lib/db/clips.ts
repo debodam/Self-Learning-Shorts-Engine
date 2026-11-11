@@ -1,14 +1,16 @@
 import "server-only";
 import { connection } from "next/server";
-import { rubricCategories, totalScore, type CandidateClip, type OpusMedia } from "@/lib/clips";
+import { rubricCategories, totalScore, type CandidateClip, type OpusMedia, type SimilarShortRef } from "@/lib/clips";
 import { getLastScoringRun } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { getClipRenderCached, listClipsCached, opusEditorUrl } from "@/lib/integrations/opus";
+import type { Json } from "@/lib/database.types";
 import { mockCandidateClips } from "@/lib/mock/candidate-clips";
+import { rankClips } from "@/lib/ranking";
 
 export type ReviewClips = {
-  /** Kept clips by rubric score, then unscored, then cut. */
+  /** Kept clips by rank (rubric and predicted views), then unscored, then cut. */
   clips: CandidateClip[];
   scoredCount: number;
   unscoredCount: number;
@@ -23,12 +25,31 @@ function postedInfo(posts: { posted_at: string | null; status: string; platform:
   return { postedAt: last, postedTo: [...new Set(recent.map((p) => p.platform))] };
 }
 
-/** Higher total first, then by each rubric category in order. Opus's score never counts. */
+/** Rubric order: higher total first, then by each rubric category. Opus's score never counts. */
 function byRubric(a: CandidateClip, b: CandidateClip) {
   const total = totalScore(b.scores!) - totalScore(a.scores!);
   if (total) return total;
   for (const c of rubricCategories) if (b.scores![c] !== a.scores![c]) return b.scores![c] - a.scores![c];
   return 0;
+}
+
+/** Rubric and predicted views together (see src/lib/ranking.ts). Opus's score never counts. */
+function byRank(clips: CandidateClip[]) {
+  const rubricOrder = [...clips].sort(byRubric);
+  return rankClips(rubricOrder.map((c) => ({ id: c.id, rubricTotal: totalScore(c.scores!), expectedViews: c.prediction?.expected ?? null, clip: c }))).map(
+    (r) => r.clip,
+  );
+}
+
+/** The similar_shorts JSON saved by scoring, or none. */
+function similarShortRefs(json: Json | null): SimilarShortRef[] {
+  if (!Array.isArray(json)) return [];
+  return json.flatMap((s) => {
+    if (!s || typeof s !== "object" || Array.isArray(s)) return [];
+    const { video_id, title, settled_views, similarity } = s as Record<string, unknown>;
+    if (typeof video_id !== "string" || typeof title !== "string" || typeof settled_views !== "number") return [];
+    return [{ videoId: video_id, title, settledViews: settled_views, similarity: typeof similarity === "number" ? similarity : 0 }];
+  });
 }
 
 /** Every clip up for review: candidates, cut clips, and synced clips not scored yet. */
@@ -43,7 +64,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
   const { data, error } = await db
     .from("clips")
     .select(
-      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, caption, picked, predicted_views_youtube, predicted_views_tiktok, predicted_views_instagram, source_videos (title, week_id), posts (scheduled_for, posted_at, status, platform)",
+      "id, opus_clip_id, status, title, transcript, format, duration_seconds, scored_at, frames_checked, face_frames, people_count, text_readable, cut_reason, score_hook, score_tension, score_standalone, score_payoff, score_loopability, score_total, score_reasoning, suggested_title, youtube_title, youtube_description, caption, picked, predicted_views_low, predicted_views_expected, predicted_views_high, prediction_reason, similar_shorts, source_videos (title, week_id), posts (scheduled_for, posted_at, status, platform)",
     )
     // Cut clips are saved as rejected, picks saved for later as approved. Scheduled and
     // posted clips stay visible as part of their week's picks.
@@ -71,11 +92,12 @@ export async function getReviewClips(): Promise<ReviewClips> {
       format: row.format,
       durationSeconds: row.duration_seconds,
       scores,
-      // The scoring job sets all three together.
-      predictedViews:
-        scores && row.predicted_views_youtube !== null && row.predicted_views_tiktok !== null && row.predicted_views_instagram !== null
-          ? { youtube: row.predicted_views_youtube, tiktok: row.predicted_views_tiktok, instagram: row.predicted_views_instagram }
+      // The scoring run sets all three together.
+      prediction:
+        scores && row.predicted_views_low !== null && row.predicted_views_expected !== null && row.predicted_views_high !== null
+          ? { low: row.predicted_views_low, expected: row.predicted_views_expected, high: row.predicted_views_high, reason: row.prediction_reason }
           : null,
+      similarShorts: scores ? similarShortRefs(row.similar_shorts) : [],
       reason: scores ? row.score_reasoning : null,
       suggestedTitle: scores ? row.suggested_title : null,
       // The scoring run decides cuts, including hard rules like the face rule, and saves them as rejected.
@@ -105,7 +127,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
     };
   });
 
-  const kept = all.filter((c) => c.scores && !c.cut).sort(byRubric);
+  const kept = byRank(all.filter((c) => c.scores && !c.cut));
   const cut = all.filter((c) => c.scores && c.cut).sort(byRubric);
   const unscored = all.filter((c) => !c.scores);
   return { clips: [...kept, ...unscored, ...cut], scoredCount: kept.length + cut.length, unscoredCount: unscored.length };

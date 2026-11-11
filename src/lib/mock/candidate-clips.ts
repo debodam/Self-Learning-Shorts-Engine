@@ -10,7 +10,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "mock",
     durationSeconds: 48,
     scores: { hook: 5, tension: 4, standalone: 5, payoff: 4, loopability: 4 },
-    predictedViews: { youtube: 48200, tiktok: 61500, instagram: 22300 },
+    prediction: { low: 24100, expected: 48200, high: 96400, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-02",
@@ -19,7 +20,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "mock",
     durationSeconds: 55,
     scores: { hook: 5, tension: 5, standalone: 4, payoff: 4, loopability: 3 },
-    predictedViews: { youtube: 52700, tiktok: 44900, instagram: 19800 },
+    prediction: { low: 26350, expected: 52700, high: 105400, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-03",
@@ -28,7 +30,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "conversational",
     durationSeconds: 42,
     scores: { hook: 4, tension: 3, standalone: 5, payoff: 5, loopability: 4 },
-    predictedViews: { youtube: 39100, tiktok: 47200, instagram: 25600 },
+    prediction: { low: 19550, expected: 39100, high: 78200, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-04",
@@ -37,7 +40,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "mock",
     durationSeconds: 51,
     scores: { hook: 4, tension: 5, standalone: 4, payoff: 5, loopability: 3 },
-    predictedViews: { youtube: 31400, tiktok: 28800, instagram: 14100 },
+    prediction: { low: 15700, expected: 31400, high: 62800, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-05",
@@ -46,7 +50,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "conversational",
     durationSeconds: 38,
     scores: { hook: 4, tension: 3, standalone: 4, payoff: 4, loopability: 5 },
-    predictedViews: { youtube: 27600, tiktok: 35300, instagram: 18900 },
+    prediction: { low: 13800, expected: 27600, high: 55200, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-06",
@@ -55,7 +60,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "mock",
     durationSeconds: 58,
     scores: { hook: 4, tension: 4, standalone: 4, payoff: 4, loopability: 3 },
-    predictedViews: { youtube: 36800, tiktok: 22400, instagram: 11700 },
+    prediction: { low: 18400, expected: 36800, high: 73600, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-07",
@@ -64,7 +70,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "conversational",
     durationSeconds: 44,
     scores: { hook: 4, tension: 3, standalone: 5, payoff: 3, loopability: 4 },
-    predictedViews: { youtube: 24300, tiktok: 41800, instagram: 21500 },
+    prediction: { low: 12150, expected: 24300, high: 48600, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-08",
@@ -73,7 +80,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "mock",
     durationSeconds: 52,
     scores: { hook: 3, tension: 4, standalone: 4, payoff: 4, loopability: 3 },
-    predictedViews: { youtube: 22900, tiktok: 19600, instagram: 10400 },
+    prediction: { low: 11450, expected: 22900, high: 45800, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-09",
@@ -82,7 +90,8 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "conversational",
     durationSeconds: 47,
     scores: { hook: 4, tension: 4, standalone: 3, payoff: 3, loopability: 3 },
-    predictedViews: { youtube: 21200, tiktok: 26700, instagram: 12900 },
+    prediction: { low: 10600, expected: 21200, high: 42400, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
   {
     id: "clip-10",
@@ -91,6 +100,7 @@ export const mockCandidateClips: CandidateClip[] = [
     format: "mock",
     durationSeconds: 40,
     scores: { hook: 3, tension: 3, standalone: 4, payoff: 3, loopability: 4 },
-    predictedViews: { youtube: 18700, tiktok: 15200, instagram: 8300 },
+    prediction: { low: 9350, expected: 18700, high: 37400, reason: "Mock prediction for layout and testing." },
+    similarShorts: [],
   },
 ];

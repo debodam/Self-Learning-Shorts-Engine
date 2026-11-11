@@ -71,7 +71,12 @@ Aced Shorts need a person on camera. A clip that is mostly a screen share or sli
 
 export const SCORING_SYSTEM_PROMPT = `${ABOUT_ACED}
 
-Your job here is to judge one candidate clip cut from a long-form video and decide whether it should make the weekly shortlist. You'll get the clip's transcript and details, frames from the clip when they're available, and sometimes past clips with similar content and how they performed. Use those past results to calibrate: if similar clips underperformed, look for the reason and score accordingly.
+Your job here is to judge one candidate clip cut from a long-form video and decide whether it should make the weekly shortlist. You'll get the clip's transcript and details, frames from the clip when they're available, and usually the 5 most similar past Shorts on the Aced channel with their settled views.
+
+Settled views are a Short's views once it has stopped growing: its total after 30 days, or its views at 7 days for newer Shorts. Use the similar Shorts in two ways:
+- Score the rubric on the clip itself. The past Shorts can sharpen your judgment (if a similar idea flopped, look for why), but don't raise or lower rubric scores just because similar Shorts did well or badly.
+- Predict this clip's settled views on YouTube as a range: low, expected, and high, with low <= expected <= high. Anchor on the similar Shorts' settled views, weighting the closest matches most, then adjust for how this clip's hook and payoff compare with theirs. Most Shorts land near the typical result, so keep the range honest rather than optimistic. In prediction_reason, write one line of at most 25 words that names the past Shorts you compared against (a short version of their titles) and how this clip differs.
+When no similar Shorts are given, still give your best range from the rubric alone and say in prediction_reason that there were no similar Shorts to compare against.
 
 ${VISUAL_CHECKS}
 
@@ -113,13 +118,12 @@ export type ClipForAgent = {
   durationSeconds?: number | null;
 };
 
-export type SimilarClip = {
+export type SimilarShortForAgent = {
   title: string;
-  format: ClipFormat;
-  hookType: string | null;
-  scoreTotal: number | null;
-  /** Latest views per platform; missing when not posted there or no metrics yet. */
-  views: Partial<Record<Platform, number>>;
+  format: string | null;
+  settledViews: number;
+  /** Cosine similarity of the embeddings, 1 is identical. */
+  similarity: number;
 };
 
 function clipDetails(clip: ClipForAgent) {
@@ -136,19 +140,37 @@ export function buildScoringRepairMessage(issues: string[]) {
   return `That breaks these rules:\n${issues.map((i) => `- ${i}`).join("\n")}\n\nScore the clip again with every rule met. Keep the scores unless the fix changes your judgment.`;
 }
 
-export function buildScoringMessage(clip: ClipForAgent, similarClips: SimilarClip[] = [], frameCount = 0) {
+export function buildScoringMessage(clip: ClipForAgent, similarShorts: SimilarShortForAgent[] = [], frameCount = 0) {
   const frames = frameCount ? `The ${frameCount} frames above are from this clip.` : "No frames are available for this clip.";
   let message = `Score this clip. ${frames}\n\n${clipDetails(clip)}`;
-  if (similarClips.length > 0) {
-    const rows = similarClips.map((s) => {
-      const views = (["youtube", "tiktok", "instagram"] as const)
-        .map((p) => `${p} ${s.views[p] ?? "n/a"}`)
-        .join(", ");
-      return `- "${s.title}" (${s.format}, hook: ${s.hookType ?? "unknown"}, score ${s.scoreTotal ?? "n/a"}/25): views ${views}`;
-    });
-    message += `\n\nPast clips and how they performed:\n${rows.join("\n")}`;
+  if (similarShorts.length > 0) {
+    const rows = similarShorts.map(
+      (s) => `- "${s.title}" (${s.format ?? "format unknown"}, similarity ${s.similarity.toFixed(2)}): ${s.settledViews} settled views`,
+    );
+    message += `\n\nThe ${similarShorts.length} most similar past Shorts on the channel, closest first:\n${rows.join("\n")}`;
+  } else {
+    message += "\n\nNo similar past Shorts with settled views are available.";
   }
   return message;
+}
+
+/** A published channel Short, scored as if it were a new candidate, for backtests. */
+export type ShortForBacktest = { title: string; description: string; format: string | null; durationSeconds: number };
+
+export function buildBacktestMessage(short: ShortForBacktest, similarShorts: SimilarShortForAgent[]) {
+  const rows = similarShorts.map(
+    (s) => `- "${s.title}" (${s.format ?? "format unknown"}, similarity ${s.similarity.toFixed(2)}): ${s.settledViews} settled views`,
+  );
+  return `Backtest: score this Short as if it were a new candidate that hasn't been posted yet. Only its title, description, and format are available: no transcript and no frames, so judge the rubric from what the title and description say the Short contains, and only give the rubric scores and the predicted views.
+
+Title: ${short.title}
+Format: ${short.format ?? "unknown"}
+Length: ${short.durationSeconds} seconds
+Description:
+${short.description || "(none)"}
+
+The ${similarShorts.length} most similar Shorts published before it, closest first:
+${rows.join("\n")}`;
 }
 
 export function buildCaptionsMessage(clip: ClipForAgent) {
@@ -161,36 +183,76 @@ export function buildCaptionsRepairMessage(issues: string[]) {
 
 // Weekly learnings -------------------------------------------------------------
 
-export const LEARNINGS_SYSTEM_PROMPT = `${ABOUT_ACED}
+export const WEEKLY_REPORT_SYSTEM_PROMPT = `${ABOUT_ACED}
 
-Your job here is to review one week of posted clips and write the weekly learning report. For each clip you'll get its format, hook type, rubric scores, the views you predicted when you scored it, and the actual results so far on each platform.
+Your job here is the weekly review of the scoring agent: how well its view predictions matched what actually happened, what that says about the scoring prompt, and up to 3 specific changes to the prompt that a person will approve or reject. Nothing you propose changes anything on its own.
 
-Write three things:
-- what_worked: 2 to 4 findings about what performed, each one sentence with the specific clip or numbers behind it.
-- what_changed: 1 to 3 concrete changes to how clips get scored, picked, framed, or captioned next week. Each should be something a person or the agent can act on.
-- reasoning: 2 to 4 sentences connecting the findings to the changes. Call out where predictions were far off and what that says about the scoring.
+You'll get:
+- The active scoring prompt, in full.
+- Accuracy numbers: Spearman rank correlation between predicted and actual settled views, the share of Shorts whose actual views landed inside the predicted low to high range, and the share of top 7 picks that beat the channel's median settled views.
+- Results for our own recently posted clips, when there are any.
+- A backtest on the channel's past Shorts: each was predicted using only Shorts published before it. You get grouped stats (by format and by headline style) and the Shorts the prompt over- and under-predicted the most. The ratio is actual divided by expected views.
 
-Base every claim on the numbers given. With only a few clips, say the evidence is thin rather than overstating a pattern. Don't use em dashes. Refer to the brand as Aced.`;
+Write:
+- what_worked: 1 to 4 findings about what the scoring got right, each one sentence with the numbers or Shorts behind it.
+- what_didnt_work: 1 to 4 findings about where predictions or rankings were off, each one sentence with the numbers or Shorts behind it.
+- reasoning: 2 to 4 sentences on why, connecting the findings to how the prompt is written.
+- patterns: up to 8 findings, each tied to a dimension (format, hook type, headline style, or topic), that say which groups over- or underperformed their predictions and by how much.
+- proposals: up to 3 changes to the scoring prompt or rubric. Each has a short title, the reasoning (which finding it addresses and why the change should help, 2 to 3 sentences), old_text, and new_text. old_text must be copied exactly, character for character, from the active prompt and must appear in it exactly once; keep it short, usually one sentence or one bullet. new_text replaces it. To add a sentence, set old_text to an existing sentence and new_text to that sentence plus the addition. Propose only changes the evidence supports; fewer is fine, and none is fine when nothing stands out. Don't propose changes to output fields, the title rules, or brand rules.
 
-export type WeekClipResult = {
-  title: string;
-  format: ClipFormat;
-  hookType: string | null;
-  scoreTotal: number | null;
-  predicted: Partial<Record<Platform, number>>;
-  actual: Partial<Record<Platform, { views: number | null; avgPercentWatched: number | null; shares: number | null }>>;
+Base every claim on the numbers given. When the evidence is thin, say so rather than overstating a pattern. Don't use em dashes. Refer to the brand as Aced, never Exponent. Refer to people by their role or name, never with he, she, him, or her.`;
+
+export type ReportGroupStat = { dimension: string; group: string; count: number; medianRatio: number; rangeHitRate: number };
+export type ReportShortRow = { title: string; format: string | null; predicted: number; actual: number; ratio: number };
+export type ReportClipRow = { title: string; format: string; hookType: string | null; predicted: number | null; actual: number | null; settled: boolean };
+export type ReportAccuracy = { label: string; count: number; spearman: number | null; rangeHitRate: number | null; top7HitRate: number | null };
+
+export type WeeklyReportInput = {
+  weekStart: string;
+  promptVersion: number;
+  promptText: string;
+  accuracy: ReportAccuracy[];
+  ownClips: ReportClipRow[];
+  groups: ReportGroupStat[];
+  overPredicted: ReportShortRow[];
+  underPredicted: ReportShortRow[];
 };
 
-export function buildLearningsMessage(weekStart: string, clips: WeekClipResult[]) {
-  const rows = clips.map((c) => {
-    const platforms = (["youtube", "tiktok", "instagram"] as const).map((p) => {
-      const a = c.actual[p];
-      const actual = a ? `${a.views ?? "n/a"} views, ${a.avgPercentWatched ?? "n/a"}% watched, ${a.shares ?? "n/a"} shares` : "no data";
-      return `  ${p}: predicted ${c.predicted[p] ?? "n/a"} views; actual ${actual}`;
-    });
-    return `- "${c.title}" (${c.format}, hook: ${c.hookType ?? "unknown"}, score ${c.scoreTotal ?? "n/a"}/25)\n${platforms.join("\n")}`;
-  });
-  return `Week starting ${weekStart}. ${clips.length} clips posted.\n\n${rows.join("\n")}`;
+const pct = (v: number | null) => (v === null ? "n/a" : `${Math.round(v * 100)}%`);
+
+export function buildWeeklyReportMessage(input: WeeklyReportInput) {
+  const accuracy = input.accuracy
+    .map((a) => `- ${a.label}: ${a.count} items, Spearman ${a.spearman?.toFixed(2) ?? "n/a"}, range hit ${pct(a.rangeHitRate)}, top 7 hit ${pct(a.top7HitRate)}`)
+    .join("\n");
+  const own = input.ownClips.length
+    ? input.ownClips
+        .map((c) => `- "${c.title}" (${c.format}, hook ${c.hookType ?? "unknown"}): predicted ${c.predicted ?? "n/a"}, actual ${c.actual ?? "n/a"}${c.settled ? "" : " (not settled yet)"}`)
+        .join("\n")
+    : "None yet.";
+  const groups = input.groups
+    .map((g) => `- ${g.dimension} = ${g.group}: ${g.count} Shorts, median actual/expected ${g.medianRatio.toFixed(2)}, range hit ${pct(g.rangeHitRate)}`)
+    .join("\n");
+  const rows = (list: ReportShortRow[]) => list.map((r) => `- "${r.title}" (${r.format ?? "unknown"}): predicted ${r.predicted}, actual ${r.actual}, ratio ${r.ratio.toFixed(2)}`).join("\n");
+  return `Weekly review for the week of ${input.weekStart}. The active scoring prompt is version ${input.promptVersion}:
+
+<prompt>
+${input.promptText}
+</prompt>
+
+Accuracy:
+${accuracy}
+
+Our own posted clips:
+${own}
+
+Backtest groups:
+${groups}
+
+Most over-predicted (actual far below expected):
+${rows(input.overPredicted)}
+
+Most under-predicted (actual far above expected):
+${rows(input.underPredicted)}`;
 }
 
 // Batch calibration -------------------------------------------------------------

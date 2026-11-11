@@ -40,6 +40,10 @@ export type OpusMedia = {
   opusScore: number | null;
 };
 
+export type ClipPrediction = { low: number; expected: number; high: number; reason: string | null };
+
+export type SimilarShortRef = { videoId: string; title: string; settledViews: number; similarity: number };
+
 export type CandidateClip = {
   id: string;
   title: string;
@@ -49,8 +53,13 @@ export type CandidateClip = {
   durationSeconds: number | null;
   /** Each score is 1 to 5. Null until the agent scores the clip. */
   scores: Record<RubricCategory, number> | null;
-  /** Predicted views in the first 7 days. Null until the agent scores the clip. */
-  predictedViews: Record<Platform, number> | null;
+  /**
+   * Predicted settled YouTube views, from the 5 most similar past Shorts. Null until the
+   * agent scores the clip with similar Shorts to compare against.
+   */
+  prediction: ClipPrediction | null;
+  /** The similar past Shorts the prediction compared against, closest first. */
+  similarShorts: SimilarShortRef[];
   /** The agent's one-line reason for the scores. */
   reason?: string | null;
   /** A factual title the agent suggests. title keeps the original. */

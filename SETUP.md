@@ -17,7 +17,7 @@ Which secrets each workflow reads:
 | Workflow | Secrets |
 | --- | --- |
 | Weekly candidates | Supabase (all 3), `ANTHROPIC_API_KEY`, `OPUSCLIP_API_KEY`, `OPUSCLIP_ORG_ID`, YouTube (all 4) |
-| Metrics pull | Supabase (all 3), `YOUTUBE_API_KEY`, `YOUTUBE_CHANNEL_ID`, and optionally `ANTHROPIC_API_KEY` (labels new Shorts) |
+| Metrics pull | Supabase (all 3), `YOUTUBE_API_KEY`, `YOUTUBE_CHANNEL_ID`, `VOYAGE_API_KEY` (embeds new clips and Shorts), and optionally `ANTHROPIC_API_KEY` (labels new Shorts) |
 | Weekly learnings | Supabase (all 3), `ANTHROPIC_API_KEY` |
 
 Metrics pull runs daily at 13:00 UTC and can also be run by hand. Weekly candidates and Weekly learnings are manual for now: **Actions > (workflow) > Run workflow**. Tick **Dry run** to read everything and write nothing. Without the Supabase secrets, a manual run of those two is a dry run; a scheduled metrics pull fails instead.
@@ -33,6 +33,7 @@ Metrics pull runs daily at 13:00 UTC and can also be run by hand. Weekly candida
    - `YOUTUBE_API_KEY`
    - `YOUTUBE_CHANNEL_ID` (`UCjm_qVkCPjOVDz9BWjNqO9A`, the @aced_io channel)
    - `ANTHROPIC_API_KEY` (optional: labels new Shorts' format with Claude Haiku, a fraction of a cent each)
+   - `VOYAGE_API_KEY` (embeds new clips and Shorts so scoring can find similar past Shorts)
 4. Check the list shows every name above. GitHub never shows a secret's value again; to change one, click it and choose **Update**.
 5. Test it: click **Actions** (top tab bar), pick **Metrics pull** on the left, click **Run workflow**, leave **Dry run** unticked, and click the green **Run workflow** button. After a minute or two the run should show a green check, and the run's summary lists how many Shorts it pulled.
 6. From then on it runs every day at 13:00 UTC. If a run fails (a missing or wrong secret, a YouTube or Supabase error), the run turns red and GitHub emails you. GitHub pauses scheduled workflows after 60 days with no commits to the repository; re-enable it from the **Actions** tab if that happens.
@@ -81,6 +82,15 @@ Notes:
 Notes for the OAuth client, if it's added later:
 - While the OAuth consent screen is in **Testing**, refresh tokens expire after 7 days. Publish the app (internal or production) before relying on the token.
 - The refresh token is tied to the Google account that authorized it. If that person loses access to the channel, the token stops working.
+
+### Voyage AI
+
+| Key | Where to get it | Current account | Moves to |
+| --- | --- | --- | --- |
+| `VOYAGE_API_KEY` | [dashboard.voyageai.com](https://dashboard.voyageai.com) > **API keys**. Model `voyage-4-large`, 1024 dimensions. The first 200M tokens are free, then $0.12 per million. | _fill in_ | Aced's Voyage organization |
+
+Notes:
+- Until a payment method is added under **Billing**, the account is limited to 3 requests and 10K tokens per minute. The embed job paces itself under that, so a full re-embed takes about 15 minutes; adding a card (the free tokens still apply) makes it take seconds.
 
 ### Instagram
 
