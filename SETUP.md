@@ -20,7 +20,7 @@ Which secrets each workflow reads:
 | Metrics pull | Supabase (all 3), `YOUTUBE_API_KEY`, `YOUTUBE_CHANNEL_ID`, `VOYAGE_API_KEY` (embeds new clips and Shorts), and optionally `ANTHROPIC_API_KEY` (labels new Shorts) |
 | Weekly report | Supabase (all 3), `ANTHROPIC_API_KEY` |
 
-Metrics pull runs daily at 13:00 UTC and Weekly report every Monday at 14:00 UTC; both can also be run by hand. Weekly candidates is manual for now: **Actions > (workflow) > Run workflow**. Tick **Dry run** to read everything and write nothing. Without the Supabase secrets, a manual run of Weekly candidates is a dry run; Metrics pull and Weekly report fail instead.
+Metrics pull runs daily at 13:00 UTC and can also be run by hand. Weekly report and Weekly candidates are manual for now: **Actions > (workflow) > Run workflow**. Tick **Dry run** to read everything and write nothing. Without the Supabase secrets, a manual run of Weekly candidates is a dry run; Metrics pull and Weekly report fail instead.
 
 ### Daily metrics pull: adding the secrets
 
@@ -71,7 +71,7 @@ Add each one for the **Production** environment (and **Preview** if you use prev
 | `YOUTUBE_API_KEY` | Yes | From `.env.local`. |
 | `YOUTUBE_CHANNEL_ID` | No | `UCjm_qVkCPjOVDz9BWjNqO9A` (@aced_io). |
 | `VOYAGE_API_KEY` | Yes | From `.env.local`. |
-| `GITHUB_DISPATCH_TOKEN` | Yes | Lets **Run weekly report now** start the Weekly report workflow, since the report runs about 10 minutes and a Vercel function stops at 5. Create it at GitHub **Settings > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token**: repository access **Only select repositories** > aced-shorts-engine, permission **Actions: Read and write**. Optional: without it the button times out on Vercel, and the Monday schedule still runs. |
+| `GITHUB_DISPATCH_TOKEN` | Yes | Lets **Run weekly report now** start the Weekly report workflow, since the report runs about 10 minutes and a Vercel function stops at 5. Create it at GitHub **Settings > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token**: repository access **Only select repositories** > aced-shorts-engine, permission **Actions: Read and write**. Optional: without it the button times out on Vercel; you can still run the workflow from the GitHub **Actions** tab. |
 
 Don't set these on Vercel: `OPUSCLIP_MOCK` (it would switch posting to mock data), `FFMPEG_PATH` (the bundled ffmpeg is used), `GITHUB_REPOSITORY` (Vercel provides the connected repo), and the unused YouTube OAuth, Instagram, and TikTok keys.
 

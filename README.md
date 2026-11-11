@@ -72,7 +72,7 @@ How it behaves:
 
 ## Scheduled jobs
 
-Three GitHub Actions workflows. Metrics pull runs daily at 13:00 UTC and Weekly report on Mondays at 14:00 UTC; Weekly candidates is manual for now (**Actions > workflow > Run workflow**):
+Three GitHub Actions workflows. Metrics pull runs daily at 13:00 UTC; Weekly report and Weekly candidates are manual for now (**Actions > workflow > Run workflow**):
 
 | Workflow | What it does | Run locally |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ Three GitHub Actions workflows. Metrics pull runs daily at 13:00 UTC and Weekly 
 | Metrics pull | Saves every Short on the Aced YouTube channel with a views, likes, and comments snapshot, updates views at 48h and 7d and settled views, links the ones we posted, and labels new Shorts' format with Claude Haiku (same as Pull metrics now) | `npm run job:metrics-pull` |
 | Embed | Embeds new clips and Shorts with Voyage for similar-Short search in scoring; runs daily after the metrics pull. `-- --all` re-embeds everything. | `npm run job:embed` |
 | Label Shorts | Labels unlabeled Shorts' format with Claude Haiku and prints the breakdown and cost; `-- --all` relabels every Short. Not a workflow. | `npm run job:label-shorts` |
-| Weekly report | Measures prediction accuracy, writes the week's learnings, proposes up to 3 scoring prompt changes, and backtests each (Mondays 14:00 UTC, or Run weekly report now on the Learnings page). Nothing changes until approved. | `npm run job:weekly-report` |
+| Weekly report | Measures prediction accuracy, writes the week's learnings, proposes up to 3 scoring prompt changes, and backtests each (manual for now: Run weekly report now on the Learnings page, or run the workflow). Nothing changes until approved. | `npm run job:weekly-report` |
 | Backtest | Backtests the active scoring prompt on every eligible channel Short, for the accuracy baseline the weekly report reads. Run it after a new prompt version goes live. Not a workflow. | `npm run job:backtest` |
 
 Add `-- --dry-run` (or tick **Dry run** in Actions) to read everything and write nothing. Without Supabase keys every run is a dry run. Keys and where they come from are in [SETUP.md](SETUP.md).

@@ -79,7 +79,7 @@ function Body({ data }: { data: LearningLoopData }) {
         <h2 className="font-semibold text-heading">Weekly learnings</h2>
         {data.learnings.length === 0 ? (
           <EmptyState icon={Lightbulb} title="No weekly reports yet">
-            The weekly report runs every Monday, or now with Run weekly report now.
+            Run the weekly report with Run weekly report now. It isn't scheduled yet.
           </EmptyState>
         ) : (
           data.learnings.map((l) => <LearningCard key={l.id} entry={l} />)

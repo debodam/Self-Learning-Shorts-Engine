@@ -5,10 +5,10 @@
 # Any error, including a missing secret, fails the run.
 name: Weekly report
 
+# Manual only for now: no schedule until the user asks for one. To schedule it, add
+#   schedule:
+#     - cron: "0 14 * * 1"   # Mondays 14:00 UTC, after the daily metrics pull
 on:
-  schedule:
-    # Mondays at 14:00 UTC (9 or 10am Eastern), after the daily metrics pull.
-    - cron: "0 14 * * 1"
   workflow_dispatch:
     inputs:
       week_start:
