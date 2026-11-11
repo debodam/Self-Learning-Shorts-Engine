@@ -18,9 +18,9 @@ Which secrets each workflow reads:
 | --- | --- |
 | Weekly candidates | Supabase (all 3), `ANTHROPIC_API_KEY`, `OPUSCLIP_API_KEY`, `OPUSCLIP_ORG_ID`, YouTube (all 4) |
 | Metrics pull | Supabase (all 3), `YOUTUBE_API_KEY`, `YOUTUBE_CHANNEL_ID`, `VOYAGE_API_KEY` (embeds new clips and Shorts), and optionally `ANTHROPIC_API_KEY` (labels new Shorts) |
-| Weekly learnings | Supabase (all 3), `ANTHROPIC_API_KEY` |
+| Weekly report | Supabase (all 3), `ANTHROPIC_API_KEY` |
 
-Metrics pull runs daily at 13:00 UTC and can also be run by hand. Weekly candidates and Weekly learnings are manual for now: **Actions > (workflow) > Run workflow**. Tick **Dry run** to read everything and write nothing. Without the Supabase secrets, a manual run of those two is a dry run; a scheduled metrics pull fails instead.
+Metrics pull runs daily at 13:00 UTC and Weekly report every Monday at 14:00 UTC; both can also be run by hand. Weekly candidates is manual for now: **Actions > (workflow) > Run workflow**. Tick **Dry run** to read everything and write nothing. Without the Supabase secrets, a manual run of Weekly candidates is a dry run; Metrics pull and Weekly report fail instead.
 
 ### Daily metrics pull: adding the secrets
 
@@ -32,7 +32,7 @@ Metrics pull runs daily at 13:00 UTC and can also be run by hand. Weekly candida
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `YOUTUBE_API_KEY`
    - `YOUTUBE_CHANNEL_ID` (`UCjm_qVkCPjOVDz9BWjNqO9A`, the @aced_io channel)
-   - `ANTHROPIC_API_KEY` (optional: labels new Shorts' format with Claude Haiku, a fraction of a cent each)
+   - `ANTHROPIC_API_KEY` (required by the weekly report; the metrics pull also uses it to label new Shorts' format with Claude Haiku)
    - `VOYAGE_API_KEY` (embeds new clips and Shorts so scoring can find similar past Shorts)
 4. Check the list shows every name above. GitHub never shows a secret's value again; to change one, click it and choose **Update**.
 5. Test it: click **Actions** (top tab bar), pick **Metrics pull** on the left, click **Run workflow**, leave **Dry run** unticked, and click the green **Run workflow** button. After a minute or two the run should show a green check, and the run's summary lists how many Shorts it pulled.
@@ -120,7 +120,7 @@ Notes:
 Do this when the keys move to Aced's accounts. Each step lists what to verify.
 
 1. **Supabase.** Create the project in Aced's organization and run `supabase db push`. To keep existing data, dump it from the old project (`supabase db dump --data-only`) and restore it into the new one. Update the 3 Supabase keys everywhere they're set. Verify: Settings shows Supabase connected and Review, Performance, and Learnings show the same data as before.
-2. **Claude.** Create a key in Aced's Anthropic organization and update `ANTHROPIC_API_KEY`. Verify: run **Weekly learnings** with **Dry run** ticked and check the run summary says Claude is live.
+2. **Claude.** Create a key in Aced's Anthropic organization and update `ANTHROPIC_API_KEY`. Verify: run **Weekly report** and check it finishes; the run summary lists the integrations it used.
 3. **OpusClip.** Finish importing any pending Opus projects first (run **Weekly candidates** until it reports no projects waiting). Then create the key in Aced's Opus workspace, connect Aced's social accounts there, and update `OPUSCLIP_API_KEY` (and `OPUSCLIP_ORG_ID` if needed). Verify: a dry run of **Weekly candidates** reports OpusClip live.
 4. **YouTube.** Create the OAuth client in Aced's Google Cloud project, publish the consent screen, authorize as an Aced account with channel access, and update all 4 YouTube keys. Verify: a dry run of **Metrics pull** lists real YouTube videos.
 5. **Instagram.** Create a system user in Aced's Business Manager with access to the app and the Instagram account, generate its token, and update both Instagram keys. Verify: the **Metrics pull** dry run lists real Reels.

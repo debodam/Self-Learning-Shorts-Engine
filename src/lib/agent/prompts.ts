@@ -1,4 +1,4 @@
-import type { ClipFormat, Platform } from "@/lib/clips";
+import type { ClipFormat } from "@/lib/clips";
 import { CAPTION_RULES, CUT_CATEGORIES, HOOK_TYPES, MIN_KEEP_SCORE } from "@/lib/agent/rules";
 
 // System prompts and message builders for the clip agent. Keep the system prompts free of

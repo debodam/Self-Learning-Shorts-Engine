@@ -449,7 +449,8 @@ export async function writeWeeklyReport(input: WeeklyReportInput): Promise<Weekl
   for (let attempt = 1; attempt <= 2; attempt++) {
     const response = await getClient().beta.messages.parse({
       model: MODEL,
-      max_tokens: 32000,
+      // Non-streaming requests stay at 16K so the SDK doesn't require streaming.
+      max_tokens: 16000,
       betas: [FALLBACK_BETA],
       fallbacks: "default",
       thinking: { type: "adaptive" },
