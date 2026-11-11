@@ -2,7 +2,7 @@ import "server-only";
 import type { Db } from "@/lib/db/client";
 import { listChannelShorts, type ChannelShort } from "@/lib/integrations/youtube";
 import { captionTitle } from "@/lib/weeks";
-import { MARK_WINDOW_MS, MARKS, viewsAtMark, type Snapshot } from "@/lib/youtube-marks";
+import { MARK_WINDOW_MS, MARKS, settledViews, viewsAtMark, type Snapshot } from "@/lib/youtube-marks";
 
 // MVP 2 metrics pull: saves every Short on the channel, a timestamped snapshot of its
 // views, likes, and comments, its views at 48 hours and 7 days, and links Shorts we
@@ -39,43 +39,37 @@ export const normalizeTitle = (title: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-// Titles only: channel descriptions often plug mock interviews in boilerplate.
-const guessFormat = (s: ChannelShort) => (/\bmock\b/i.test(s.title) ? ("mock" as const) : ("conversational" as const));
-
 /** Pulls every Short on the channel and saves it. Running it again updates rows, never duplicates them. */
 export async function pullYouTubeMetrics(db: Db, log: (line: string) => void = () => {}): Promise<PullResult> {
   const listing = await listChannelShorts();
   if (listing.mock) throw new Error("YouTube isn't connected, so there's nothing real to save. Set YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID.");
   const { shorts } = listing;
   const capturedAt = new Date().toISOString();
+  const now = Date.parse(capturedAt);
   log(`Checked ${listing.videosChecked} uploads with ${listing.quotaUnits} API calls: ${shorts.length} Shorts.`);
 
-  // 1. Upsert the Shorts. Linked Shorts keep the format from their clip.
-  const existing = new Map<string, { post_id: string | null }>();
+  // 1. Upsert the Shorts. Format labels and post links are set separately and kept.
+  const existing = new Map<string, { views7d: number | null }>();
   for (const ids of chunks(shorts.map((s) => s.videoId))) {
-    const { data, error } = await db.from("youtube_shorts").select("video_id, post_id").in("video_id", ids);
+    const { data, error } = await db.from("youtube_shorts").select("video_id, views_7d").in("video_id", ids);
     if (error) throw new Error(`Failed to load saved Shorts: ${error.message}`);
-    for (const row of data) existing.set(row.video_id, { post_id: row.post_id });
+    for (const row of data) existing.set(row.video_id, { views7d: row.views_7d });
   }
-  const base = (s: ChannelShort) => ({
+  const rows = shorts.map((s) => ({
     video_id: s.videoId,
     title: s.title,
     description: s.description,
     published_at: s.publishedAt,
     duration_seconds: s.durationSeconds,
+    thumbnail_url: s.thumbnailUrl,
     views: s.views,
     likes: s.likes,
     comments: s.comments,
+    settled_views: settledViews(s.publishedAt, s.views, existing.get(s.videoId)?.views7d ?? null, now),
     last_pulled_at: capturedAt,
-  });
-  const linked = shorts.filter((s) => existing.get(s.videoId)?.post_id);
-  const unlinked = shorts.filter((s) => !existing.get(s.videoId)?.post_id);
-  for (const rows of chunks(linked.map(base))) {
-    const { error } = await db.from("youtube_shorts").upsert(rows, { onConflict: "video_id" });
-    if (error) throw new Error(`Failed to save Shorts: ${error.message}`);
-  }
-  for (const rows of chunks(unlinked.map((s) => ({ ...base(s), format: guessFormat(s), format_guessed: true })))) {
-    const { error } = await db.from("youtube_shorts").upsert(rows, { onConflict: "video_id" });
+  }));
+  for (const chunk of chunks(rows)) {
+    const { error } = await db.from("youtube_shorts").upsert(chunk, { onConflict: "video_id" });
     if (error) throw new Error(`Failed to save Shorts: ${error.message}`);
   }
 
@@ -88,7 +82,8 @@ export async function pullYouTubeMetrics(db: Db, log: (line: string) => void = (
   }
 
   // 3. Views at 48 hours and 7 days. Only recent Shorts can still gain a nearby snapshot.
-  await updateMarks(db, shorts.filter((s) => Date.parse(capturedAt) - Date.parse(s.publishedAt) <= MARK_WINDOW_MS + HOUR_MS));
+  // Settled views follow the 7-day reading for Shorts under 30 days old.
+  await updateMarks(db, shorts.filter((s) => now - Date.parse(s.publishedAt) <= MARK_WINDOW_MS + HOUR_MS), now);
 
   // 4. Link our posts.
   const { matched, unmatched } = await matchPosts(db, shorts);
@@ -105,7 +100,7 @@ export async function pullYouTubeMetrics(db: Db, log: (line: string) => void = (
   };
 }
 
-async function updateMarks(db: Db, shorts: ChannelShort[]) {
+async function updateMarks(db: Db, shorts: ChannelShort[], now: number) {
   if (shorts.length === 0) return;
   const byVideo = new Map<string, Snapshot[]>();
   for (const ids of chunks(shorts.map((s) => s.videoId), 100)) {
@@ -119,8 +114,9 @@ async function updateMarks(db: Db, shorts: ChannelShort[]) {
   }
   for (const short of shorts) {
     const snapshots = byVideo.get(short.videoId) ?? [];
-    const values: Partial<Record<(typeof MARKS)[number]["key"], number | null>> = {};
+    const values: Partial<Record<(typeof MARKS)[number]["key"] | "settled_views", number | null>> = {};
     for (const mark of MARKS) values[mark.key] = viewsAtMark(short.publishedAt, snapshots, mark);
+    values.settled_views = settledViews(short.publishedAt, short.views, values.views_7d ?? null, now);
     const { error } = await db.from("youtube_shorts").update(values).eq("video_id", short.videoId);
     if (error) throw new Error(`Failed to save views at 48h and 7d for "${short.title}": ${error.message}`);
   }
@@ -136,7 +132,7 @@ async function matchPosts(db: Db, shorts: ChannelShort[]) {
   const now = Date.now();
   const { data: posts, error } = await db
     .from("posts")
-    .select("id, clip_id, caption, status, scheduled_for, posted_at, clips (title, youtube_title, format, status)")
+    .select("id, clip_id, caption, status, scheduled_for, posted_at, clips (title, youtube_title, status)")
     .eq("platform", "youtube")
     .in("status", ["posted", "scheduled"]);
   if (error) throw new Error(`Failed to load YouTube posts: ${error.message}`);
@@ -175,7 +171,7 @@ async function matchPosts(db: Db, shorts: ChannelShort[]) {
     takenVideos.add(short.videoId);
     const { error: linkShortError } = await db
       .from("youtube_shorts")
-      .update({ post_id: post.id, format: post.clips.format, format_guessed: false })
+      .update({ post_id: post.id })
       .eq("video_id", short.videoId);
     if (linkShortError) throw new Error(`Failed to link "${title}": ${linkShortError.message}`);
     const { error: postError } = await db

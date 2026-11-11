@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, ExternalLink } from "lucide-react";
 import { SegmentedControl } from "@/components/segmented-control";
-import { formatLabels, type ClipFormat } from "@/lib/clips";
 import type { ShortRow } from "@/lib/db/youtube-shorts";
+import { SETTLED_AGE_DAYS, SHORT_FORMATS, shortFormatLabels, type ShortFormat } from "@/lib/youtube-marks";
 
 const fullNumber = new Intl.NumberFormat("en-US");
 const compactNumber = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
@@ -17,9 +17,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const PAGE = 50;
 
 type DateFilter = "7" | "30" | "90" | "365" | "all";
-type FormatFilter = "all" | ClipFormat;
+type FormatFilter = "all" | ShortFormat;
 type SourceFilter = "all" | "pipeline" | "other";
-type SortKey = "publishedAt" | "views48h" | "views7d" | "views" | "likes" | "comments" | "engagement";
+type SortKey = "publishedAt" | "settledViews" | "views48h" | "views7d" | "views" | "likes" | "comments" | "engagement";
 
 const dateOptions: { value: DateFilter; label: string }[] = [
   { value: "7", label: "7 days" },
@@ -30,8 +30,7 @@ const dateOptions: { value: DateFilter; label: string }[] = [
 ];
 const formatOptions: { value: FormatFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "mock", label: formatLabels.mock },
-  { value: "conversational", label: formatLabels.conversational },
+  ...SHORT_FORMATS.map((f) => ({ value: f, label: shortFormatLabels[f] })),
 ];
 const sourceOptions: { value: SourceFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -40,6 +39,11 @@ const sourceOptions: { value: SourceFilter; label: string }[] = [
 ];
 
 const columns: { key: SortKey; label: string; title?: string }[] = [
+  {
+    key: "settledViews",
+    label: "Settled views",
+    title: `Current views once a Short is over ${SETTLED_AGE_DAYS} days old, otherwise its 7-day views`,
+  },
   { key: "views48h", label: "Views 48h", title: "Views 48 hours after publish" },
   { key: "views7d", label: "Views 7d", title: "Views 7 days after publish" },
   { key: "views", label: "Views", title: "Views as of the last pull" },
@@ -81,10 +85,13 @@ export function ShortsDashboard({ shorts, now }: { shorts: ShortRow[]; now: numb
     };
 
   // Summary cards cover the whole channel so filters don't move them.
-  const with7d = shorts.filter((s) => s.views7d !== null);
-  const avg7d = with7d.length ? Math.round(with7d.reduce((sum, s) => sum + s.views7d!, 0) / with7d.length) : null;
-  const thisMonth = monthKey(new Date(now));
-  const best = shorts.filter((s) => monthKey(new Date(s.publishedAt)) === thisMonth).toSorted((a, b) => b.views - a.views)[0];
+  const settled = shorts.filter((s) => s.settledViews !== null);
+  const avgSettled = settled.length ? Math.round(settled.reduce((sum, s) => sum + s.settledViews!, 0) / settled.length) : null;
+  const thisMonth = shorts.filter((s) => monthKey(new Date(s.publishedAt)) === monthKey(new Date(now)));
+  // Best by settled views. Early in a month nothing has settled yet, so fall back to the
+  // current leader and say so.
+  const bestSettled = thisMonth.filter((s) => s.settledViews !== null).toSorted((a, b) => b.settledViews! - a.settledViews!)[0];
+  const best = bestSettled ?? thisMonth.toSorted((a, b) => b.views - a.views)[0];
 
   return (
     <div className="flex flex-col gap-6">
@@ -93,18 +100,21 @@ export function ShortsDashboard({ shorts, now }: { shorts: ShortRow[]; now: numb
           <p className="mt-1 text-3xl font-bold tracking-tight text-heading">{fullNumber.format(shorts.length)}</p>
           <p className="mt-2 text-sm text-muted">{shorts.filter((s) => s.fromPipeline).length} from our pipeline</p>
         </Card>
-        <Card label="Average 7-day views">
-          <p className="mt-1 text-3xl font-bold tracking-tight text-heading">{avg7d === null ? "None yet" : compactNumber.format(avg7d)}</p>
+        <Card label="Average settled views">
+          <p className="mt-1 text-3xl font-bold tracking-tight text-heading">{avgSettled === null ? "None yet" : compactNumber.format(avgSettled)}</p>
           <p className="mt-2 text-sm text-muted">
-            {with7d.length
-              ? `Across ${with7d.length} ${with7d.length === 1 ? "Short" : "Shorts"} with a 7-day reading`
-              : "Needs a pull about 7 days after a Short goes live"}
+            {settled.length
+              ? `Across ${settled.length} ${settled.length === 1 ? "Short" : "Shorts"} with settled views`
+              : "Shorts settle at 7 days or 30 days old"}
           </p>
         </Card>
         <Card label={`Best Short in ${monthName.format(new Date(now))}`}>
           {best ? (
             <>
-              <p className="mt-1 text-3xl font-bold tracking-tight text-heading">{compactNumber.format(best.views)} views</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-heading">
+                {compactNumber.format(bestSettled ? best.settledViews! : best.views)} views
+              </p>
+              {!bestSettled && <p className="text-xs text-muted">Current views; none settled yet this month</p>}
               <a
                 href={`https://www.youtube.com/shorts/${best.videoId}`}
                 target="_blank"
@@ -169,17 +179,21 @@ export function ShortsDashboard({ shorts, now }: { shorts: ShortRow[]; now: numb
                   </td>
                   <td className="whitespace-nowrap px-3 py-3">
                     {s.format ? (
-                      <span className="rounded-full bg-page px-2 py-0.5 text-xs text-body" title={s.formatGuessed ? "Guessed from the title" : "From the clip"}>
-                        {formatLabels[s.format]}
-                        {s.formatGuessed ? "?" : ""}
+                      <span
+                        className="rounded-full bg-page px-2 py-0.5 text-xs text-body"
+                        title={`${s.formatConfidence ? `${s.formatConfidence} confidence: ` : ""}${s.formatReason ?? ""}`}
+                      >
+                        {shortFormatLabels[s.format]}
+                        {s.formatConfidence === "low" ? "?" : ""}
                       </span>
                     ) : (
-                      <Missing />
+                      <Missing label="Not labeled" />
                     )}
                   </td>
+                  <NumberCell value={s.settledViews} missing="Not settled" strong />
                   <NumberCell value={s.views48h} missing="Not captured" />
                   <NumberCell value={s.views7d} missing="Not captured" />
-                  <NumberCell value={s.views} strong />
+                  <NumberCell value={s.views} />
                   <NumberCell value={s.likes} missing="Hidden" />
                   <NumberCell value={s.comments} missing="Off" />
                   <td className="whitespace-nowrap px-3 py-3 pr-5 text-right tabular-nums">{percent(s.engagement) ?? <Missing />}</td>
@@ -187,7 +201,7 @@ export function ShortsDashboard({ shorts, now }: { shorts: ShortRow[]; now: numb
               ))}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={10} className="px-5 py-10 text-center text-muted">
                     No Shorts match these filters.
                   </td>
                 </tr>
@@ -204,8 +218,9 @@ export function ShortsDashboard({ shorts, now }: { shorts: ShortRow[]; now: numb
         )}
       </section>
       <p className="text-xs text-muted">
-        Views at 48h and 7d come from the pulls closest to each mark, so they only exist for Shorts pulled near that age.
-        A format with ? is guessed from the title; Shorts from our pipeline use the clip&apos;s format.
+        Settled views are current views once a Short is over {SETTLED_AGE_DAYS} days old, otherwise its 7-day views. Views
+        at 48h and 7d come from the daily pulls closest to each mark. Formats are labeled by Claude from the title,
+        description, and thumbnail; ? marks a low-confidence label, and hovering shows the reason.
       </p>
     </div>
   );

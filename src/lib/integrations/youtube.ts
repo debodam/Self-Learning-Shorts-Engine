@@ -199,6 +199,7 @@ export type ChannelShort = {
   likes: number | null;
   /** Null when comments are off. */
   comments: number | null;
+  thumbnailUrl: string | null;
 };
 
 export type ChannelShortsResult = {
@@ -254,7 +255,13 @@ export async function listChannelShorts(): Promise<ChannelShortsResult> {
     const videos = await keyGet<{
       items: {
         id: string;
-        snippet: { title: string; description: string; publishedAt: string; liveBroadcastContent: string };
+        snippet: {
+          title: string;
+          description: string;
+          publishedAt: string;
+          liveBroadcastContent: string;
+          thumbnails?: Record<string, { url: string } | undefined>;
+        };
         contentDetails: { duration: string };
         statistics: { viewCount?: string; likeCount?: string; commentCount?: string };
       }[];
@@ -263,7 +270,7 @@ export async function listChannelShorts(): Promise<ChannelShortsResult> {
       id: ids.join(","),
       maxResults: String(PAGE_SIZE),
       fields:
-        "items(id,snippet(title,description,publishedAt,liveBroadcastContent),contentDetails/duration,statistics(viewCount,likeCount,commentCount))",
+        "items(id,snippet(title,description,publishedAt,liveBroadcastContent,thumbnails(high/url,medium/url)),contentDetails/duration,statistics(viewCount,likeCount,commentCount))",
     });
     quotaUnits++;
     videosChecked += videos.items.length;
@@ -281,6 +288,7 @@ export async function listChannelShorts(): Promise<ChannelShortsResult> {
         views: count(v.statistics.viewCount) ?? 0,
         likes: count(v.statistics.likeCount),
         comments: count(v.statistics.commentCount),
+        thumbnailUrl: v.snippet.thumbnails?.high?.url ?? v.snippet.thumbnails?.medium?.url ?? null,
       });
     }
   } while (pageToken);

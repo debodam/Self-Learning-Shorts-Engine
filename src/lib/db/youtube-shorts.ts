@@ -1,9 +1,8 @@
 import "server-only";
 import { connection } from "next/server";
-import type { ClipFormat } from "@/lib/clips";
 import { getDb } from "@/lib/db/client";
 import { listChannelShorts, youtubeConnected } from "@/lib/integrations/youtube";
-import { engagementRate } from "@/lib/youtube-marks";
+import { engagementRate, settledViews, type Confidence, type ShortFormat } from "@/lib/youtube-marks";
 
 export type ShortRow = {
   videoId: string;
@@ -15,9 +14,13 @@ export type ShortRow = {
   comments: number | null;
   views48h: number | null;
   views7d: number | null;
+  /** The main performance number: see settledViews. Null until a newer Short has 7-day views. */
+  settledViews: number | null;
   engagement: number | null;
-  format: ClipFormat | null;
-  formatGuessed: boolean;
+  /** Claude's label. Null until labeled. */
+  format: ShortFormat | null;
+  formatConfidence: Confidence | null;
+  formatReason: string | null;
   fromPipeline: boolean;
 };
 
@@ -39,6 +42,7 @@ export async function getShortsPerformance(): Promise<ShortsPerformance> {
   const db = getDb();
   if (!db || !youtubeConnected()) {
     const { shorts } = await listChannelShorts();
+    const now = Date.now();
     return {
       mock: true,
       unmatched: [],
@@ -47,9 +51,11 @@ export async function getShortsPerformance(): Promise<ShortsPerformance> {
         ...s,
         views48h: null,
         views7d: null,
+        settledViews: settledViews(s.publishedAt, s.views, null, now),
         engagement: engagementRate(s.views, s.likes, s.comments),
-        format: /\bmock\b/i.test(s.title) ? "mock" : "conversational",
-        formatGuessed: true,
+        format: /\bmock\b/i.test(s.title) ? "mock_interview" : "conversational",
+        formatConfidence: null,
+        formatReason: "Sample data",
         fromPipeline: false,
       })),
     };
@@ -59,7 +65,7 @@ export async function getShortsPerformance(): Promise<ShortsPerformance> {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db
       .from("youtube_shorts")
-      .select("video_id, title, published_at, duration_seconds, views, likes, comments, views_48h, views_7d, format, format_guessed, post_id, last_pulled_at")
+      .select("video_id, title, published_at, duration_seconds, views, likes, comments, views_48h, views_7d, format, format_confidence, format_reason, post_id, last_pulled_at")
       .order("published_at", { ascending: false })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`Failed to load Shorts: ${error.message}`);
@@ -74,6 +80,7 @@ export async function getShortsPerformance(): Promise<ShortsPerformance> {
     .not("match_note", "is", null);
   if (flaggedError) throw new Error(`Failed to load unmatched posts: ${flaggedError.message}`);
 
+  const now = Date.now();
   return {
     mock: false,
     lastPulledAt: rows.reduce<string | null>((latest, r) => (!latest || r.last_pulled_at > latest ? r.last_pulled_at : latest), null),
@@ -93,9 +100,12 @@ export async function getShortsPerformance(): Promise<ShortsPerformance> {
       comments: r.comments,
       views48h: r.views_48h,
       views7d: r.views_7d,
+      // Computed here too, so a Short crossing 30 days counts before the next pull.
+      settledViews: settledViews(r.published_at, r.views, r.views_7d, now),
       engagement: engagementRate(r.views, r.likes, r.comments),
-      format: r.format,
-      formatGuessed: r.format_guessed,
+      format: r.format as ShortFormat | null,
+      formatConfidence: r.format_confidence as Confidence | null,
+      formatReason: r.format_reason,
       fromPipeline: r.post_id !== null,
     })),
   };

@@ -50,12 +50,13 @@ How it behaves:
 
 ## Scheduled jobs
 
-Three GitHub Actions workflows, manual trigger only for now (**Actions > workflow > Run workflow**):
+Three GitHub Actions workflows. Metrics pull runs daily at 13:00 UTC; the others are manual for now (**Actions > workflow > Run workflow**):
 
 | Workflow | What it does | Run locally |
 | --- | --- | --- |
 | Weekly candidates | Finds new long-form uploads, submits them to OpusClip, imports finished clips, and scores them with the agent | `npm run job:weekly-candidates` |
-| Metrics pull | Saves every Short on the Aced YouTube channel with a views, likes, and comments snapshot, and links the ones we posted (same as Pull metrics now) | `npm run job:metrics-pull` |
+| Metrics pull | Saves every Short on the Aced YouTube channel with a views, likes, and comments snapshot, updates views at 48h and 7d and settled views, links the ones we posted, and labels new Shorts' format with Claude Haiku (same as Pull metrics now) | `npm run job:metrics-pull` |
+| Label Shorts | Labels unlabeled Shorts' format with Claude Haiku and prints the breakdown and cost; `-- --all` relabels every Short. Not a workflow. | `npm run job:label-shorts` |
 | Weekly learnings | Compares predicted and actual views for last week's posts and writes the learnings entry | `npm run job:weekly-learnings` |
 
 Add `-- --dry-run` (or tick **Dry run** in Actions) to read everything and write nothing. Without Supabase keys every run is a dry run. Keys and where they come from are in [SETUP.md](SETUP.md).

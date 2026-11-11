@@ -47,3 +47,27 @@ export function viewsAtMark(publishedAt: string, snapshots: Snapshot[], mark: Ma
 export function engagementRate(views: number, likes: number | null, comments: number | null) {
   return views > 0 ? ((likes ?? 0) + (comments ?? 0)) / views : null;
 }
+
+/** Shorts mostly stop growing after a few weeks. Past this age, current views count as settled. */
+export const SETTLED_AGE_DAYS = 30;
+const SETTLED_AGE_MS = SETTLED_AGE_DAYS * 24 * HOUR_MS;
+
+/**
+ * The main performance number. Current views for Shorts older than 30 days; otherwise
+ * the 7-day views once captured. Null while a newer Short has no 7-day reading yet.
+ */
+export function settledViews(publishedAt: string, views: number, views7d: number | null, now = Date.now()): number | null {
+  return now - Date.parse(publishedAt) > SETTLED_AGE_MS ? views : views7d;
+}
+
+/** Content formats Claude labels each Short with. */
+export const SHORT_FORMATS = ["mock_interview", "conversational", "explainer", "other"] as const;
+export type ShortFormat = (typeof SHORT_FORMATS)[number];
+export const shortFormatLabels: Record<ShortFormat, string> = {
+  mock_interview: "Mock interview",
+  conversational: "Conversational",
+  explainer: "Explainer",
+  other: "Other",
+};
+export const CONFIDENCE_LEVELS = ["high", "medium", "low"] as const;
+export type Confidence = (typeof CONFIDENCE_LEVELS)[number];

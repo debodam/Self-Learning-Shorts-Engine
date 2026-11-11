@@ -31,6 +31,7 @@ import type { RubricCategory } from "@/lib/clips";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { requireEnv } from "@/lib/integrations/shared";
 import { mockCaption, mockClipScore, mockWeeklyLearning } from "@/lib/mock/agent";
+import { CONFIDENCE_LEVELS, SHORT_FORMATS, type Confidence, type ShortFormat } from "@/lib/youtube-marks";
 
 // Claude API calls for the clip agent. Docs: https://platform.claude.com/docs
 // Every function returns mock data when ANTHROPIC_API_KEY isn't set.
@@ -403,4 +404,58 @@ export async function writeWeeklyLearnings(weekStart: string, clips: WeekClipRes
   const issues = [...out.what_worked, ...out.what_changed, out.reasoning].flatMap((t) => checkViewerText("Learnings", t));
   if (issues.length) throw new Error(`Claude's learnings broke the rules: ${[...new Set(issues)].join("; ")}`);
   return { whatWorked: out.what_worked, whatChanged: out.what_changed, reasoning: out.reasoning };
+}
+
+// Short format labels --------------------------------------------------------------
+
+// Labeling is a simple classification run on every Short on the channel, so it uses Haiku.
+export const LABEL_MODEL = "claude-haiku-5-5";
+
+const LABEL_SYSTEM_PROMPT = `You label YouTube Shorts from Aced, a tech and product interview prep company, by content format.
+
+Formats:
+- mock_interview: a candidate answering interview questions while an interviewer asks or reacts. Role-played practice interviews and clips cut from them count, even when only the answer is shown.
+- conversational: people talking with each other about careers, companies, or interviews, such as a podcast, panel, or interview with an expert, where nobody is being interviewed for a job.
+- explainer: one presenter teaching a concept or giving advice directly to the viewer, with or without graphics, such as "What is an API?" or interview tips to camera.
+- other: anything else, such as promos, announcements, memes, or behind the scenes.
+
+Use the title, the description, and the thumbnail together. Descriptions often repeat channel boilerplate about mock interviews or coaching; ignore boilerplate and judge the Short itself.
+
+Confidence: high when the signals agree and the format is clear, medium when you are fairly sure but one signal is weak or missing, low when you are mostly guessing.
+
+The reason is one short sentence naming the deciding signal.`;
+
+const labelSchema = z.object({
+  format: z.enum(SHORT_FORMATS),
+  confidence: z.enum(CONFIDENCE_LEVELS),
+  reason: z.string(),
+});
+
+export type ShortForLabel = { title: string; description: string; thumbnail: { data: Buffer; mediaType: "image/jpeg" | "image/png" | "image/webp" } | null };
+export type ShortLabel = { format: ShortFormat; confidence: Confidence; reason: string; usage: TokenUsage };
+
+/** Labels one Short's content format from its title, description, and thumbnail. */
+export async function labelShortFormat(short: ShortForLabel): Promise<ShortLabel> {
+  if (!connected()) throw new Error("Claude isn't connected, so Shorts can't be labeled.");
+  const content: Anthropic.Beta.BetaContentBlockParam[] = [];
+  if (short.thumbnail) {
+    content.push({ type: "image", source: { type: "base64", media_type: short.thumbnail.mediaType, data: short.thumbnail.data.toString("base64") } });
+  }
+  content.push({
+    type: "text",
+    text: `${short.thumbnail ? "The image above is the thumbnail." : "No thumbnail is available."}\n\nTitle: ${short.title}\n\nDescription:\n${short.description || "(none)"}`,
+  });
+  const response = await getClient().beta.messages.parse({
+    model: LABEL_MODEL,
+    max_tokens: 2000,
+    // A simple classification: low effort keeps thinking (and cost) to a minimum.
+    thinking: { type: "adaptive" },
+    output_config: { effort: "low", format: betaZodOutputFormat(labelSchema) },
+    system: LABEL_SYSTEM_PROMPT,
+    messages: [{ role: "user", content }],
+  });
+  assertUsable(response, "label the Short");
+  const out = response.parsed_output;
+  if (!out) throw new Error("Claude returned no parseable label");
+  return { format: out.format, confidence: out.confidence, reason: out.reason.trim(), usage: toUsage(response.usage) };
 }

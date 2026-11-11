@@ -28,5 +28,6 @@ export function mockChannelShorts(): ChannelShort[] {
     views,
     likes,
     comments,
+    thumbnailUrl: null,
   }));
 }

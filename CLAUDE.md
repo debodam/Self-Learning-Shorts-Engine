@@ -10,6 +10,8 @@ MVP 2 (YouTube metrics and a self-learning scoring loop) is the current focus, o
 
 YouTube metrics come from a plain Data API v3 key (`YOUTUBE_API_KEY`, public data only, no OAuth) for the Aced channel `YOUTUBE_CHANNEL_ID` (@aced_io, never Ace Your Interviews). That gives views, likes, and comments. It does not give retention or subscribers gained, so don't build anything that needs them. A Short is a video 3 minutes or under. Batch video IDs 50 per call to keep quota low.
 
+Settled views are the main performance number everywhere: current views for Shorts older than 30 days, otherwise views at 7 days once captured. Each Short's format (mock interview, conversational, explainer, or other) is labeled by Claude Haiku from its title, description, and thumbnail, with a confidence level. The metrics pull runs daily in GitHub Actions so 48-hour and 7-day snapshots get captured.
+
 ## Users
 
 Single-user auth for now. More teammates may be added later, so don't hardcode any user.

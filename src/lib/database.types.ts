@@ -409,12 +409,17 @@ export type Database = {
           created_at: string
           description: string
           duration_seconds: number
-          format: Database["public"]["Enums"]["clip_format"] | null
-          format_guessed: boolean
+          format: string | null
+          format_confidence: string | null
+          format_labeled_at: string | null
+          format_model: string | null
+          format_reason: string | null
           last_pulled_at: string
           likes: number | null
           post_id: string | null
           published_at: string
+          settled_views: number | null
+          thumbnail_url: string | null
           title: string
           video_id: string
           views: number
@@ -426,12 +431,17 @@ export type Database = {
           created_at?: string
           description?: string
           duration_seconds: number
-          format?: Database["public"]["Enums"]["clip_format"] | null
-          format_guessed?: boolean
+          format?: string | null
+          format_confidence?: string | null
+          format_labeled_at?: string | null
+          format_model?: string | null
+          format_reason?: string | null
           last_pulled_at?: string
           likes?: number | null
           post_id?: string | null
           published_at: string
+          settled_views: number | null
+          thumbnail_url: string | null
           title: string
           video_id: string
           views?: number
@@ -443,12 +453,17 @@ export type Database = {
           created_at?: string
           description?: string
           duration_seconds?: number
-          format?: Database["public"]["Enums"]["clip_format"] | null
-          format_guessed?: boolean
+          format?: string | null
+          format_confidence?: string | null
+          format_labeled_at?: string | null
+          format_model?: string | null
+          format_reason?: string | null
           last_pulled_at?: string
           likes?: number | null
           post_id?: string | null
           published_at?: string
+          settled_views?: number | null
+          thumbnail_url?: string | null
           title?: string
           video_id?: string
           views?: number

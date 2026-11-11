@@ -1,10 +1,16 @@
-# Pull views, likes, and comments for every Short on the Aced YouTube channel (MVP 2).
-# Manual trigger only for now. To schedule it, add a `schedule:` cron trigger.
-# Keys come from repository secrets (see SETUP.md). Any integration whose secrets are
-# missing uses mock data, and without the Supabase secrets the job runs as a dry run.
+# Daily YouTube metrics pull (MVP 2): every Short on the Aced channel gets a views,
+# likes, and comments snapshot, so views at 48 hours and 7 days get captured for new
+# Shorts. Also links Shorts we posted and labels new Shorts' format with Claude Haiku.
+# Keys come from repository secrets (see SETUP.md > Daily metrics pull).
+#
+# Scheduled runs require every secret: a missing one fails the run instead of falling
+# back to a dry run. GitHub emails the repository's admins when a scheduled run fails.
 name: Metrics pull
 
 on:
+  schedule:
+    # 13:00 UTC is 8am or 9am Eastern, depending on daylight saving time.
+    - cron: "0 13 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -24,12 +30,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DRY_RUN: ${{ inputs.dry_run }}
+      DRY_RUN: ${{ inputs.dry_run == true }}
+      # Scheduled runs have no inputs, so they always require a live pull.
+      REQUIRE_LIVE: ${{ inputs.dry_run != true }}
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+      # Optional: without it, new Shorts wait for a label until the next pull with a key.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -37,4 +47,5 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The job exits non-zero on any error, which fails the run.
       - run: npm run job:metrics-pull
