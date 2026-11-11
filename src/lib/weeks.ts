@@ -47,29 +47,54 @@ function currentWeekStart(now = new Date()) {
   return day.toISOString().slice(0, 10);
 }
 
-/**
- * Creates a week and submits each YouTube link to Opus with the Aced template. Spends
- * Opus credits, so callers must get the user's confirmation first.
- */
-export async function startWeek(db: Db, links: string[]) {
-  const urls = links.map((link) => normalizeYouTubeUrl(link));
-  if (urls.length !== VIDEOS_PER_WEEK || urls.some((u) => !u)) {
-    throw new Error(`Paste ${VIDEOS_PER_WEEK} YouTube video links.`);
-  }
-  if (new Set(urls).size !== urls.length) throw new Error("The two links are the same video.");
+/** One of the week's videos: a YouTube link, or a file already uploaded to OpusClip. */
+export type WeekSource = { kind: "youtube"; url: string } | { kind: "upload"; uploadId: string; title: string; fileName: string };
 
-  const { data: existing, error: existingError } = await db.from("source_videos").select("title, youtube_url").in("youtube_url", urls as string[]);
-  if (existingError) throw new Error(`Failed to check for duplicates: ${existingError.message}`);
+const UPLOAD_ID = /^[\w.:-]{6,200}$/;
+const MAX_TITLE = 200;
+
+/**
+ * Creates a week and submits each video to Opus with the Aced template: a YouTube link,
+ * or a file the browser already uploaded with createUploadSession. Spends Opus credits,
+ * so callers must get the user's confirmation first.
+ */
+export async function startWeek(db: Db, sources: WeekSource[]) {
+  if (sources.length !== VIDEOS_PER_WEEK) throw new Error(`Add ${VIDEOS_PER_WEEK} videos.`);
+  const prepared: { videoUrl: string; youtubeUrl: string | null; uploadId: string | null; fileName: string | null; title: string; channel: string }[] = [];
+  for (const [i, source] of sources.entries()) {
+    if (source.kind === "youtube") {
+      const url = normalizeYouTubeUrl(source.url);
+      if (!url) throw new Error(`Video ${i + 1} isn't a YouTube video link.`);
+      prepared.push({ videoUrl: url, youtubeUrl: url, uploadId: null, fileName: null, title: "", channel: "" });
+    } else {
+      const title = source.title.trim().slice(0, MAX_TITLE);
+      if (!UPLOAD_ID.test(source.uploadId)) throw new Error(`Video ${i + 1}'s upload didn't finish. Upload it again.`);
+      if (!title) throw new Error(`Give video ${i + 1} a title.`);
+      // Opus takes the upload ID in place of a video URL.
+      prepared.push({ videoUrl: source.uploadId, youtubeUrl: null, uploadId: source.uploadId, fileName: source.fileName.slice(0, MAX_TITLE), title, channel: "Uploaded file" });
+    }
+  }
+  const keys = prepared.map((p) => p.youtubeUrl ?? p.uploadId);
+  if (new Set(keys).size !== keys.length) throw new Error("The two videos are the same.");
+
+  const urls = prepared.flatMap((p) => (p.youtubeUrl ? [p.youtubeUrl] : []));
+  const uploads = prepared.flatMap((p) => (p.uploadId ? [p.uploadId] : []));
+  const [byUrl, byUpload] = await Promise.all([
+    urls.length ? db.from("source_videos").select("title").in("youtube_url", urls) : { data: [], error: null },
+    uploads.length ? db.from("source_videos").select("title").in("upload_id", uploads) : { data: [], error: null },
+  ]);
+  if (byUrl.error || byUpload.error) throw new Error(`Failed to check for duplicates: ${(byUrl.error ?? byUpload.error)!.message}`);
+  const existing = [...byUrl.data!, ...byUpload.data!];
   if (existing.length) throw new Error(`Already submitted: ${existing.map((v) => `"${v.title}"`).join(", ")}.`);
 
-  // Check every link before spending any credits.
-  const videos = await Promise.all(
-    (urls as string[]).map(async (url) => {
-      const info = await getVideoInfo(url);
-      if (!info) throw new Error(`Couldn't find a public YouTube video at ${url}.`);
-      return { url, ...info };
-    }),
-  );
+  // Check every YouTube link before spending any credits.
+  for (const p of prepared) {
+    if (!p.youtubeUrl) continue;
+    const info = await getVideoInfo(p.youtubeUrl);
+    if (!info) throw new Error(`Couldn't find a public YouTube video at ${p.youtubeUrl}.`);
+    p.title = info.title;
+    p.channel = info.channelTitle;
+  }
   const brandTemplateId = await findBrandTemplateId();
   if (!brandTemplateId) throw new Error('No "Aced Template #1" brand template found in Opus. Set OPUSCLIP_BRAND_TEMPLATE_NAME.');
 
@@ -78,13 +103,15 @@ export async function startWeek(db: Db, links: string[]) {
 
   // One at a time, saving each, so a failed second submit doesn't lose the first.
   const failed: string[] = [];
-  for (const video of videos) {
+  for (const video of prepared) {
     try {
-      const { projectId } = await submitVideo({ videoUrl: video.url, title: video.title, brandTemplateId, autoHeadline: true });
+      const { projectId } = await submitVideo({ videoUrl: video.videoUrl, title: video.title, brandTemplateId, autoHeadline: true });
       const { error } = await db.from("source_videos").insert({
-        youtube_url: video.url,
+        youtube_url: video.youtubeUrl,
+        upload_id: video.uploadId,
+        upload_file_name: video.fileName,
         title: video.title,
-        channel: video.channelTitle,
+        channel: video.channel,
         opus_project_id: projectId,
         week_id: week.id,
         opus_status: "submitted",
@@ -95,7 +122,7 @@ export async function startWeek(db: Db, links: string[]) {
       failed.push(`"${video.title}": ${error instanceof Error ? error.message : error}`);
     }
   }
-  return { weekId: week.id, submitted: videos.length - failed.length, failed };
+  return { weekId: week.id, submitted: prepared.length - failed.length, failed };
 }
 
 /** Maps an Opus project stage to our status. Unknown and in-flight stages are processing. */

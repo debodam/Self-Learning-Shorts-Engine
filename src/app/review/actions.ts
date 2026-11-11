@@ -2,11 +2,12 @@
 
 import { requireSession } from "@/lib/auth/require";
 import { refresh } from "next/cache";
+import { headers } from "next/headers";
 import { runScoring } from "@/lib/clip-scoring";
 import { getDb } from "@/lib/db/client";
 import { isIntegrationConnected } from "@/lib/integrations/config";
 import { checkViewerText } from "@/lib/agent/rules";
-import { setClipHeadline } from "@/lib/integrations/opus";
+import { createUploadSession, setClipHeadline } from "@/lib/integrations/opus";
 import { syncOpusProject } from "@/lib/opus-sync";
 import {
   addMissingHeadlines,
@@ -20,6 +21,7 @@ import {
   startWeek,
   writePickCaptions,
   type PostItem,
+  type WeekSource,
 } from "@/lib/weeks";
 
 export type SyncFromOpusResult = { ok: boolean; message: string };
@@ -91,15 +93,52 @@ export async function syncFromOpus(projectId: string): Promise<SyncFromOpusResul
 const message = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback);
 
 /** Submits 2 YouTube links to Opus as a new week. Spends Opus credits: the UI confirms first. */
-export async function startNewWeek(links: string[]): Promise<SyncFromOpusResult> {
+/** Parses the week's 2 videos from the client: YouTube links or uploaded files. */
+function parseSources(input: unknown): WeekSource[] | null {
+  if (!Array.isArray(input)) return null;
+  const out: WeekSource[] = [];
+  for (const s of input) {
+    if (typeof s === "string") out.push({ kind: "youtube", url: s });
+    else if (s && typeof s === "object" && s.kind === "youtube" && typeof s.url === "string") out.push({ kind: "youtube", url: s.url });
+    else if (
+      s &&
+      typeof s === "object" &&
+      s.kind === "upload" &&
+      typeof s.uploadId === "string" &&
+      typeof s.title === "string" &&
+      typeof s.fileName === "string"
+    )
+      out.push({ kind: "upload", uploadId: s.uploadId, title: s.title, fileName: s.fileName });
+    else return null;
+  }
+  return out;
+}
+
+/** Creates an OpusClip upload link for one file. The browser uploads the file to it directly. */
+export async function createVideoUpload(): Promise<{ ok: true; uploadId: string; uploadUrl: string | null } | { ok: false; message: string }> {
   await requireSession();
-  if (!Array.isArray(links) || links.some((l) => typeof l !== "string")) return { ok: false, message: "Paste 2 YouTube links." };
+  if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings before uploading." };
+  const h = await headers();
+  const origin = h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
+  try {
+    const session = await createUploadSession(origin);
+    return { ok: true, ...session };
+  } catch (error) {
+    console.error("Creating an upload link failed:", error);
+    return { ok: false, message: message(error, "Couldn't start the upload.") };
+  }
+}
+
+export async function startNewWeek(videos: unknown): Promise<SyncFromOpusResult> {
+  await requireSession();
+  const sources = parseSources(videos);
+  if (!sources) return { ok: false, message: "Add 2 videos: a YouTube link or an uploaded file each." };
   if (!opusWritable()) return { ok: false, message: "Connect OpusClip in Settings before starting a week." };
   const db = getDb();
   if (!db) return { ok: false, message: "Connect Supabase in Settings before starting a week." };
 
   try {
-    const result = await startWeek(db, links);
+    const result = await startWeek(db, sources);
     refresh();
     if (result.failed.length) {
       return { ok: false, message: `Submitted ${result.submitted} of 2. Failed: ${result.failed.join("; ")}` };

@@ -74,8 +74,42 @@ function headers(): HeadersInit {
 
 // Projects -------------------------------------------------------------------
 
+export type UploadSession = {
+  /** Goes in submitVideo's videoUrl once the file is uploaded. */
+  uploadId: string;
+  /** Resumable upload URL the browser PUTs the file to. Null in mock mode. */
+  uploadUrl: string | null;
+};
+
+/**
+ * Starts a direct file upload: creates an OpusClip upload link, then opens a resumable
+ * Google Cloud Storage session on it. The browser PUTs the file straight to the returned
+ * URL, so the video never passes through our server (Vercel caps request size).
+ * Docs: https://help.opus.pro/api-reference/endpoints/upload-video-create-project
+ *
+ * The session is opened with the browser's Origin, because GCS only answers cross-origin
+ * requests on a resumable session from the origin that started it.
+ */
+export async function createUploadSession(origin: string): Promise<UploadSession> {
+  if (!connected()) return { uploadId: `upload-mock-${Date.now()}`, uploadUrl: null };
+
+  const link = await fetchJson<{ url?: string; uploadId?: string; data?: { url?: string; uploadId?: string } }>("OpusClip", `${BASE_URL}/upload-links`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ video: { usecase: "LocalUpload" } }),
+  });
+  const url = link.url ?? link.data?.url;
+  const uploadId = link.uploadId ?? link.data?.uploadId;
+  if (!url || !uploadId) throw new Error("OpusClip didn't return an upload link.");
+
+  const start = await fetch(url, { method: "POST", headers: { "x-goog-resumable": "start", "Content-Length": "0", Origin: origin } });
+  const uploadUrl = start.headers.get("location");
+  if (!start.ok || !uploadUrl) throw new Error(`OpusClip's upload storage didn't start the upload (${start.status}).`);
+  return { uploadId, uploadUrl };
+}
+
 export type SubmitVideoInput = {
-  /** YouTube URL or a public MP4 link to the long-form video. */
+  /** YouTube URL, a public MP4 link, or the uploadId of a file uploaded with createUploadSession. */
   videoUrl: string;
   title?: string;
   /** Allowed clip lengths in seconds, as [min, max] ranges. */

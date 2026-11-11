@@ -60,7 +60,7 @@ Match Aced's product UI. Light theme, light gray page background, white sidebar,
 
 The Review page follows this flow. Build and change features to fit it.
 
-1. Once last week's posts are done, the user pastes 2 new Aced YouTube links.
+1. Once last week's posts are done, the user adds 2 new Aced videos: each a YouTube link or an uploaded MP4 or MOV file. Uploads go straight from the browser to OpusClip's storage (never through our server, since Vercel caps request size); the file name becomes the editable video title.
 2. Both get submitted to OpusClip with the Aced template.
 3. When Opus finishes, the clips sync in and get scored on our rubric.
 4. The top 7 across both videos are auto-highlighted as this week's picks.

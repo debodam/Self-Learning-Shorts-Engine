@@ -347,7 +347,9 @@ export type Database = {
           id: string
           opus_project_id: string | null
           title: string
-          youtube_url: string
+          youtube_url: string | null
+          upload_id: string | null
+          upload_file_name: string | null
           opus_checked_at: string | null
           opus_status: string | null
           week_id: string | null
@@ -359,7 +361,9 @@ export type Database = {
           id?: string
           opus_project_id?: string | null
           title: string
-          youtube_url: string
+          youtube_url?: string | null
+          upload_id?: string | null
+          upload_file_name?: string | null
           opus_checked_at?: string | null
           opus_status?: string | null
           week_id?: string | null
@@ -371,7 +375,9 @@ export type Database = {
           id?: string
           opus_project_id?: string | null
           title?: string
-          youtube_url?: string
+          youtube_url?: string | null
+          upload_id?: string | null
+          upload_file_name?: string | null
           opus_checked_at?: string | null
           opus_status?: string | null
           week_id?: string | null

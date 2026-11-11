@@ -133,7 +133,7 @@ export async function getReviewClips(): Promise<ReviewClips> {
   return { clips: [...kept, ...unscored, ...cut], scoredCount: kept.length + cut.length, unscoredCount: unscored.length };
 }
 
-export type WeekVideo = { id: string; title: string; youtubeUrl: string; status: string | null; checkedAt: string | null };
+export type WeekVideo = { id: string; title: string; /** Null for an uploaded file. */ youtubeUrl: string | null; status: string | null; checkedAt: string | null };
 export type Week = { id: string; startsOn: string; createdAt: string; videos: WeekVideo[] };
 
 /** Every week, newest first. The first is the current week. */
